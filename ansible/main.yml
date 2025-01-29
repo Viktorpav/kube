@@ -48,3 +48,16 @@
     - name: Include Calico setup
       include_tasks: calico.yml
       when: inventory_hostname == "master-1"
+
+- name: Setup Kubernetes Workers
+  hosts: k8s_workers
+  gather_facts: yes
+  become: yes
+  vars_files:
+    - vars.yml
+  tasks:
+    - name: Include common Kubernetes setup
+      include_tasks: common.yml
+
+    - name: Include worker join
+      include_tasks: worker-join.yml
