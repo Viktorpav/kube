@@ -1,0 +1,50 @@
+---
+- name: Prepare Kubernetes Cluster
+  hosts: k8s_cluster
+  gather_facts: yes
+  become: yes
+  pre_tasks:
+    - name: Wait for cloud-init to complete
+      command: cloud-init status --wait
+      changed_when: false
+      failed_when: false
+      timeout: 300
+
+- name: Install Common Kubernetes Components
+  hosts: k8s_cluster
+  gather_facts: yes
+  become: yes
+  vars_files:
+    - vars.yml
+  tasks:
+    - name: Include common Kubernetes setup
+      include_tasks: common.yml
+
+- name: Setup Kubernetes Masters
+  hosts: k8s_masters
+  gather_facts: yes
+  become: yes
+  vars_files:
+    - vars.yml
+  tasks:
+    - name: Include Keepalived setup
+      include_tasks: keepalived.yml
+      when: inventory_hostname in groups['k8s_masters']
+
+    - name: Include Master initialization
+      include_tasks: master-init.yml
+      when: inventory_hostname == "master-1"
+
+    - name: Include Master join
+      include_tasks: master-join.yml
+      when:
+        - inventory_hostname in groups['k8s_masters']
+        - inventory_hostname != "master-1"
+
+    - name: Include Kubeconfig setup
+      include_tasks: kubeconfig.yml
+      when: inventory_hostname in groups['k8s_masters']
+
+    - name: Include Calico setup
+      include_tasks: calico.yml
+      when: inventory_hostname == "master-1"

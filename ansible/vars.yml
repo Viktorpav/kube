@@ -1,0 +1,8 @@
+vip_address: "192.168.0.100"
+node_ip: "{{ hostvars[inventory_hostname].ansible_default_ipv4.address }}"
+control_plane_endpoint: "{{ vip_address }}:6443"
+router_id: "51"
+keepalived_auth_pass: "Kubernetes123"
+pod_network_cidr: "10.244.0.0/16"
+user_home: "/home/ubuntu"
+vip_interface: "eth0"

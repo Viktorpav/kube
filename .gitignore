@@ -1,0 +1,21 @@
+# Distribution / packaging
+.Python
+env/
+.env
+*.sqlite3
+.idea/
+media
+db.sqlite3# Editor directories and files
+__pycache__/
+*.py[cod]
+*$py.class
+.DS_Store
+*.pem
+# Terraform for regular infrastructure
+.terraform/*
+*.tfstate
+*.tfstate.*
+# Terrafrom K8s baremetal infrastructure
+.terraform/*
+*.tfstate
+*.tfstate.*

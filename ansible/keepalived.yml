@@ -1,0 +1,83 @@
+---
+- name: Install Keepalived
+  apt:
+    name: keepalived
+    state: present
+    update_cache: yes
+
+- name: Set Keepalived priority
+  set_fact:
+    keepalived_priority: "{{ 101 if inventory_hostname == 'master-1' else 98 }}"
+
+- name: Create check script
+  copy:
+    dest: /usr/local/bin/check_apiserver.sh
+    mode: "0755"
+    content: |
+      #!/bin/bash
+      errorExit() {
+          echo "*** $*" 1>&2
+          exit 1
+      }
+      if [ ! -f /etc/kubernetes/admin.conf ]; then
+          exit 0
+      }
+      curl -sk --max-time 3 https://127.0.0.1:6443/healthz || errorExit "Local API server unhealthy"
+      if ip addr show {{ vip_interface }} | grep -q {{ vip_address }}; then
+          curl -sk --max-time 3 https://{{ vip_address }}:6443/healthz || errorExit "VIP API server unhealthy"
+      fi
+
+- name: Configure Keepalived
+  copy:
+    dest: /etc/keepalived/keepalived.conf
+    content: |
+      global_defs {
+          router_id K8S_MASTER_{{ router_id }}
+          enable_script_security
+          script_user root
+      }
+      vrrp_script check_apiserver {
+          script "/usr/local/bin/check_apiserver.sh"
+          interval 3
+          weight -2
+          fall 3
+          rise 2
+          timeout 5
+      }
+      vrrp_instance VI_1 {
+          state {{ 'MASTER' if inventory_hostname == 'master-1' else 'BACKUP' }}
+          interface {{ vip_interface }}
+          virtual_router_id {{ router_id }}
+          priority {{ keepalived_priority }}
+          advert_int 1
+          authentication {
+              auth_type PASS
+              auth_pass {{ keepalived_auth_pass }}
+          }
+          virtual_ipaddress {
+              {{ vip_address }}/24 dev {{ vip_interface }} label {{ vip_interface }}:vip
+          }
+          track_script {
+              check_apiserver
+          }
+          unicast_src_ip {{ node_ip }}
+          unicast_peer {
+              {% for host in groups['k8s_masters'] %}
+              {% if host != inventory_hostname %}
+              {{ hostvars[host].ansible_default_ipv4.address }}
+              {% endif %}
+              {% endfor %}
+          }
+      }
+
+- name: Restart Keepalived
+  systemd:
+    name: keepalived
+    state: restarted
+  when: true
+
+- name: Ensure Keepalived is enabled and started
+  systemd:
+    name: keepalived
+    enabled: yes
+    state: started

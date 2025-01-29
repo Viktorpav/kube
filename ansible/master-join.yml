@@ -1,0 +1,26 @@
+---
+- name: Check if already joined
+  stat:
+    path: /etc/kubernetes/kubelet.conf
+  register: kubelet_config
+
+- name: Get join credentials from first master
+  set_fact:
+    worker_join_command: "{{ hostvars['master-1'].worker_join_command | default('') }}"
+    cert_key: "{{ hostvars['master-1'].cert_key | default('') }}"
+  when: not kubelet_config.stat.exists
+
+- name: Validate credentials
+  fail:
+    msg: "Missing join credentials from master-1"
+  when: worker_join_command == '' or cert_key == ''
+
+- name: Join control plane
+  command: "{{ worker_join_command }} --control-plane --certificate-key {{ cert_key }}"
+  when: not kubelet_config.stat.exists
+  async: 300
+  poll: 15
+  register: join_result
+  retries: 3
+  delay: 30
+  until: join_result.rc == 0
