@@ -1,41 +1,41 @@
 ---
-- name: Initialize first master
-  when: inventory_hostname == "master-1"
-  block:
-    - name: Check cluster initialization
-      stat:
-        path: /etc/kubernetes/pki/ca.crt
-      register: cluster_initialized
+- name: Check if local node is initialized
+  stat:
+    path: /etc/kubernetes/pki/ca.crt
+  register: local_cluster_initialized
 
+- name: Initialize first master
+  block:
     - name: Initialize Kubernetes cluster
       command: >
         kubeadm init
         --pod-network-cidr={{ pod_network_cidr }}
         --control-plane-endpoint={{ control_plane_endpoint }}
-        --apiserver-advertise-address={{ node_ip }}
         --apiserver-cert-extra-sans={{ vip_address }}
         --upload-certs
         --cri-socket unix:///run/containerd/containerd.sock
-      when: not cluster_initialized.stat.exists
       register: kubeadm_init
 
     - name: Get certificate key
       command: kubeadm init phase upload-certs --upload-certs
       register: cert_key_output
 
-    - name: Extract worker join command
+    - name: Extract join command
       command: kubeadm token create --print-join-command
       register: join_command_output
 
-    - name: Set facts for join commands
+    - name: Set join command facts
       set_fact:
-        worker_join_command: "{{ join_command_output.stdout }}"
+        master_join_command: "{{ join_command_output.stdout }}"
         cert_key: "{{ cert_key_output.stdout_lines[-1] }}"
 
     - name: Share credentials with other masters
       set_fact:
-        worker_join_command: "{{ worker_join_command }}"
+        master_join_command: "{{ master_join_command }}"
         cert_key: "{{ cert_key }}"
       delegate_to: "{{ item }}"
       delegate_facts: true
       loop: "{{ groups['k8s_masters'] | difference([inventory_hostname]) }}"
+  when:
+    - inventory_hostname == groups['k8s_masters'][0]
+    - not local_cluster_initialized.stat.exists

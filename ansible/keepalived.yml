@@ -5,9 +5,9 @@
     state: present
     update_cache: yes
 
-- name: Set Keepalived priority
+- name: Set Keepalived priority based on node position
   set_fact:
-    keepalived_priority: "{{ 101 if inventory_hostname == 'master-1' else 98 }}"
+    keepalived_priority: "{{ 100 + (groups['k8s_masters'] | length) - (groups['k8s_masters'].index(inventory_hostname)) }}"
 
 - name: Create check script
   copy:
@@ -15,16 +15,14 @@
     mode: "0755"
     content: |
       #!/bin/bash
-      errorExit() {
-          echo "*** $*" 1>&2
-          exit 1
-      }
-      if [ ! -f /etc/kubernetes/admin.conf ]; then
-          exit 0
-      }
-      curl -sk --max-time 3 https://127.0.0.1:6443/healthz || errorExit "Local API server unhealthy"
-      if ip addr show {{ vip_interface }} | grep -q {{ vip_address }}; then
-          curl -sk --max-time 3 https://{{ vip_address }}:6443/healthz || errorExit "VIP API server unhealthy"
+      APISERVER=https://127.0.0.1:6443
+      KUBE_CONFIG=/etc/kubernetes/admin.conf
+
+      # Use kubectl with fallback to curl
+      if [ -f $KUBE_CONFIG ]; then
+        timeout 3 kubectl --kubeconfig=$KUBE_CONFIG get nodes >/dev/null 2>&1 || exit 1
+      else
+        curl -sk --max-time 3 $APISERVER/healthz >/dev/null 2>&1 || exit 1
       fi
 
 - name: Configure Keepalived
@@ -32,49 +30,52 @@
     dest: /etc/keepalived/keepalived.conf
     content: |
       global_defs {
-          router_id K8S_MASTER_{{ router_id }}
-          enable_script_security
-          script_user root
+        router_id K8S_MASTER_{{ router_id }}
+        enable_script_security
+        script_user root
       }
+
       vrrp_script check_apiserver {
-          script "/usr/local/bin/check_apiserver.sh"
-          interval 3
-          weight -2
-          fall 3
-          rise 2
-          timeout 5
+        script "/usr/local/bin/check_apiserver.sh"
+        interval 2
+        weight -10
+        fall 2
+        rise 1
+        timeout 2
+
       }
+
       vrrp_instance VI_1 {
-          state {{ 'MASTER' if inventory_hostname == 'master-1' else 'BACKUP' }}
-          interface {{ vip_interface }}
-          virtual_router_id {{ router_id }}
-          priority {{ keepalived_priority }}
-          advert_int 1
-          authentication {
-              auth_type PASS
-              auth_pass {{ keepalived_auth_pass }}
-          }
-          virtual_ipaddress {
-              {{ vip_address }}/24 dev {{ vip_interface }} label {{ vip_interface }}:vip
-          }
-          track_script {
-              check_apiserver
-          }
-          unicast_src_ip {{ node_ip }}
-          unicast_peer {
-              {% for host in groups['k8s_masters'] %}
-              {% if host != inventory_hostname %}
-              {{ hostvars[host].ansible_default_ipv4.address }}
-              {% endif %}
-              {% endfor %}
-          }
+        state BACKUP
+        interface {{ vip_interface }}
+        virtual_router_id {{ router_id }}
+        priority {{ keepalived_priority }}
+        advert_int 1
+        authentication {
+          auth_type PASS
+          auth_pass {{ keepalived_auth_pass }}
+        }
+        virtual_ipaddress {
+          {{ vip_address }}/24
+        }
+        track_script {
+          check_apiserver
+        }
+        unicast_src_ip {{ hostvars[inventory_hostname].ansible_default_ipv4.address }}
+        unicast_peer {
+          {% for peer in groups['k8s_masters'] %}
+          {% if peer != inventory_hostname %}
+          {{ hostvars[peer].ansible_default_ipv4.address }}
+          {% endif %}
+          {% endfor %}
+        }
       }
 
 - name: Restart Keepalived
   systemd:
     name: keepalived
     state: restarted
-  when: true
+    daemon_reload: yes
 
 - name: Ensure Keepalived is enabled and started
   systemd:
