@@ -1,0 +1,46 @@
+---
+- name: Explicitly gather facts
+  setup:
+    gather_subset:
+      - "network"
+
+- name: Install HAProxy
+  apt:
+    name: haproxy
+    state: present
+    update_cache: yes
+
+- name: Configure HAProxy
+  copy:
+    dest: /etc/haproxy/haproxy.cfg
+    content: |
+      global
+        user haproxy
+        group haproxy
+        daemon
+
+      defaults
+        mode tcp
+        timeout connect 10s
+        timeout client 50s
+        timeout server 50s
+
+      frontend kubernetes-api
+          bind *:6443
+          mode tcp
+          default_backend kubernetes-backend
+
+      backend kubernetes-backend
+        mode tcp
+        balance roundrobin
+        option tcp-check
+        {% for host in groups['k8s_masters'] %}
+        server {{ host }} {{ hostvars[host].ansible_default_ipv4.address }}:6443 check fall 3 rise 2
+        {% endfor %}
+
+- name: Ensure HAProxy is enabled and started
+  systemd:
+    name: haproxy
+    enabled: yes
+    state: restarted
+    daemon_reload: yes

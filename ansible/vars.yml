@@ -3,6 +3,20 @@ node_ip: "{{ hostvars[inventory_hostname].ansible_default_ipv4.address }}"
 control_plane_endpoint: "{{ vip_address }}:6443"
 router_id: "51"
 keepalived_auth_pass: "Kubernetes123"
+kubernetes_version: "1.32.1"
 pod_network_cidr: "10.244.0.0/16"
 user_home: "/home/ubuntu"
 vip_interface: "eth0"
+
+# Helm Configuration
+helm_version: "3.14.0"
+
+# Prometheus Configuration
+prometheus_namespace: "monitoring"
+prometheus_chart_version: "56.6.0"
+prometheus_storage_size: "10Gi"
+
+# Grafana Configuration
+grafana_namespace: "monitoring"
+grafana_chart_version: "7.3.0"
+grafana_admin_password: "grafana" # "{{ vault_grafana_password }}" Use Ansible Vault

@@ -202,13 +202,94 @@ resource "proxmox_vm_qemu" "k8s-worker-pve2" {
   sshkeys   = file(var.ssh_key_path)
 }
 
-resource "null_resource" "ansible_provisioner1" {
+resource "proxmox_vm_qemu" "lb-pve" {
+  name        = "lb-1"
+  target_node = "pve"
+  provider    = proxmox
+  onboot      = true
+  clone       = "ubuntu-template"
+  agent       = 1
+  os_type     = "cloud-init"
+  cores       = 2
+  sockets     = 1
+  numa        = true
+  cpu         = "host"
+  memory      = 2048
+  scsihw      = "virtio-scsi-single"
+  bootdisk    = "scsi0"
+
+  serial {
+    id   = 0
+    type = "socket"
+  }
+
+  network {
+    bridge   = "vmbr0"
+    firewall = false
+    model    = "virtio"
+  }
+
+  lifecycle {
+    ignore_changes = [
+      disk,
+      vm_state,
+      sshkeys
+    ]
+  }
+
+  ipconfig0 = "ip=192.168.0.150/24,gw=${var.gateway}"
+  ssh_user  = "ubuntu"
+  sshkeys   = file(var.ssh_key_path)
+}
+
+resource "proxmox_vm_qemu" "lb-pve2" {
+  name        = "lb-2"
+  target_node = "pve2"
+  provider    = proxmox.pve2
+  onboot      = true
+  clone       = "ubuntu-template"
+  agent       = 1
+  os_type     = "cloud-init"
+  cores       = 2
+  sockets     = 1
+  numa        = true
+  cpu         = "host"
+  memory      = 2048
+  scsihw      = "virtio-scsi-single"
+  bootdisk    = "scsi0"
+
+  serial {
+    id   = 0
+    type = "socket"
+  }
+
+  network {
+    bridge   = "vmbr0"
+    firewall = false
+    model    = "virtio"
+  }
+
+  lifecycle {
+    ignore_changes = [
+      disk,
+      vm_state,
+      sshkeys
+    ]
+  }
+
+  ipconfig0 = "ip=192.168.0.151/24,gw=${var.gateway}"
+  ssh_user  = "ubuntu"
+  sshkeys   = file(var.ssh_key_path)
+}
+
+resource "null_resource" "ansible_provisioner" {
   triggers = {
     always_run = "${timestamp()}"
     vm_ids = join(",", concat(
       [proxmox_vm_qemu.k8s-master-pve.id, proxmox_vm_qemu.k8s-master-pve2.id, proxmox_vm_qemu.k8s-master-pve3.id],
       proxmox_vm_qemu.k8s-worker-pve[*].id,
-      proxmox_vm_qemu.k8s-worker-pve2[*].id
+      proxmox_vm_qemu.k8s-worker-pve2[*].id,
+      [proxmox_vm_qemu.lb-pve.id, proxmox_vm_qemu.lb-pve2.id]
     ))
   }
 
@@ -225,6 +306,10 @@ resource "null_resource" "ansible_provisioner1" {
       echo "worker-pve2-1 ansible_host=192.168.0.112 ansible_user=ubuntu ansible_ssh_private_key_file=~/Projects/.ssh/id_ed25519" >> inventory.ini
       echo "worker-pve2-2 ansible_host=192.168.0.113 ansible_user=ubuntu ansible_ssh_private_key_file=~/Projects/.ssh/id_ed25519" >> inventory.ini
       echo "" >> inventory.ini
+      echo "[load_balancers]" >> inventory.ini
+      echo "lb-1 ansible_host=192.168.0.150 ansible_user=ubuntu ansible_ssh_private_key_file=~/Projects/.ssh/id_ed25519" >> inventory.ini
+      echo "lb-2 ansible_host=192.168.0.151 ansible_user=ubuntu ansible_ssh_private_key_file=~/Projects/.ssh/id_ed25519" >> inventory.ini
+      echo "" >> inventory.ini
       echo "[k8s_cluster:children]" >> inventory.ini
       echo "k8s_masters" >> inventory.ini
       echo "k8s_workers" >> inventory.ini
@@ -232,7 +317,7 @@ resource "null_resource" "ansible_provisioner1" {
   }
 
   provisioner "local-exec" {
-    command = "ansible-playbook -i inventory.ini ansible/main.yml"
+    command = "ANSIBLE_CONFIG=ansible/ansible.cfg ansible-playbook -i inventory.ini ansible/main.yml"
   }
 
   depends_on = [
@@ -240,6 +325,8 @@ resource "null_resource" "ansible_provisioner1" {
     proxmox_vm_qemu.k8s-master-pve2,
     proxmox_vm_qemu.k8s-master-pve3,
     proxmox_vm_qemu.k8s-worker-pve,
-    proxmox_vm_qemu.k8s-worker-pve2
+    proxmox_vm_qemu.k8s-worker-pve2,
+    proxmox_vm_qemu.lb-pve,
+    proxmox_vm_qemu.lb-pve2
   ]
 }

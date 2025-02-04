@@ -5,25 +5,14 @@
     state: present
     update_cache: yes
 
-- name: Set Keepalived priority based on node position
-  set_fact:
-    keepalived_priority: "{{ 100 + (groups['k8s_masters'] | length) - (groups['k8s_masters'].index(inventory_hostname)) }}"
-
 - name: Create check script
   copy:
-    dest: /usr/local/bin/check_apiserver.sh
+    dest: /usr/local/bin/check_haproxy.sh
     mode: "0755"
     content: |
       #!/bin/bash
-      APISERVER=https://127.0.0.1:6443
-      KUBE_CONFIG=/etc/kubernetes/admin.conf
-
-      # Use kubectl with fallback to curl
-      if [ -f $KUBE_CONFIG ]; then
-        timeout 3 kubectl --kubeconfig=$KUBE_CONFIG get nodes >/dev/null 2>&1 || exit 1
-      else
-        curl -sk --max-time 3 $APISERVER/healthz >/dev/null 2>&1 || exit 1
-      fi
+      killall -0 haproxy
+      exit $?
 
 - name: Configure Keepalived
   copy:
@@ -35,21 +24,19 @@
         script_user root
       }
 
-      vrrp_script check_apiserver {
-        script "/usr/local/bin/check_apiserver.sh"
+      vrrp_script check_haproxy {
+        script "/usr/local/bin/check_haproxy.sh"
         interval 2
         weight -10
         fall 2
         rise 1
-        timeout 2
-
       }
 
       vrrp_instance VI_1 {
-        state BACKUP
+        state {{ 'MASTER' if inventory_hostname == 'lb-1' else 'BACKUP' }}
         interface {{ vip_interface }}
         virtual_router_id {{ router_id }}
-        priority {{ keepalived_priority }}
+        priority {{ '100' if inventory_hostname == 'lb-1' else '90' }}
         advert_int 1
         authentication {
           auth_type PASS
@@ -58,27 +45,21 @@
         virtual_ipaddress {
           {{ vip_address }}/24
         }
-        track_script {
-          check_apiserver
-        }
-        unicast_src_ip {{ hostvars[inventory_hostname].ansible_default_ipv4.address }}
         unicast_peer {
-          {% for peer in groups['k8s_masters'] %}
-          {% if peer != inventory_hostname %}
-          {{ hostvars[peer].ansible_default_ipv4.address }}
+          {% for host in groups['load_balancers'] %}
+          {% if host != inventory_hostname %}
+          {{ hostvars[host].ansible_default_ipv4.address }}
           {% endif %}
           {% endfor %}
         }
+        track_script {
+          check_haproxy
+        }
       }
 
-- name: Restart Keepalived
+- name: Enable and start Keepalived
   systemd:
     name: keepalived
     state: restarted
-    daemon_reload: yes
-
-- name: Ensure Keepalived is enabled and started
-  systemd:
-    name: keepalived
     enabled: yes
-    state: started
+    daemon_reload: yes

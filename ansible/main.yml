@@ -20,8 +20,8 @@
     - name: Include common Kubernetes setup
       include_tasks: common.yml
 
-- name: Setup Kubernetes Masters
-  hosts: k8s_masters
+- name: Setup Load Balancers
+  hosts: load_balancers
   gather_facts: yes
   become: yes
   vars_files:
@@ -29,8 +29,17 @@
   tasks:
     - name: Include Keepalived setup
       include_tasks: keepalived.yml
-      when: inventory_hostname in groups['k8s_masters']
 
+    - name: Include HAProxy setup
+      include_tasks: haproxy.yml
+
+- name: Setup Kubernetes Masters
+  hosts: k8s_masters
+  gather_facts: yes
+  become: yes
+  vars_files:
+    - vars.yml
+  tasks:
     - name: Include Master initialization
       include_tasks: master-init.yml
       when: inventory_hostname == "master-1"
@@ -49,6 +58,22 @@
       include_tasks: calico.yml
       when: inventory_hostname == "master-1"
 
+- name: Configure Kubernetes Masters
+  hosts: k8s_masters
+  gather_facts: yes
+  become: yes
+  vars_files:
+    - vars.yml
+  tags:
+    - configure_masters
+  tasks:
+    - name: Configure Masters Controller Manager
+      include_tasks: kube_controller_manager.yml
+
+    - name: Configure Masters RBAC
+      include_tasks: rbac.yml
+      when: inventory_hostname == "master-1"
+
 - name: Setup Kubernetes Workers
   hosts: k8s_workers
   gather_facts: yes
@@ -61,3 +86,20 @@
 
     - name: Include worker join
       include_tasks: worker-join.yml
+
+- name: Setup Kubernetes Monitoring
+  hosts: k8s_masters
+  gather_facts: yes
+  become: yes
+  vars_files:
+    - vars.yml
+  tags:
+    - configure_masters
+  tasks:
+    - name: Include Helm Installation
+      include_tasks: helm.yml
+      when: inventory_hostname == "master-1"
+
+    - name: Include Prometheus Operator configuration
+      include_tasks: monitoring.yml
+      when: inventory_hostname == "master-1"

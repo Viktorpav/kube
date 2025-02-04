@@ -1,0 +1,13 @@
+---
+- name: Install Helm
+  ansible.builtin.unarchive:
+    src: https://get.helm.sh/helm-v3.12.0-linux-amd64.tar.gz
+    dest: /usr/local/bin
+    remote_src: yes
+    extra_opts: [--strip-components=1]
+    mode: 0755
+
+- name: Add Prometheus Helm repository
+  kubernetes.core.helm_repository:
+    name: prometheus-community
+    repo_url: https://prometheus-community.github.io/helm-charts
