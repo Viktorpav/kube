@@ -26,9 +26,27 @@
         timeout server 50s
 
       frontend kubernetes-api
-          bind *:6443
-          mode tcp
-          default_backend kubernetes-backend
+        bind *:6443
+        mode tcp
+        default_backend kubernetes-backend
+
+      frontend monitoring_grafana
+        bind *:30000
+        mode http
+        default_backend grafana_backend
+
+      frontend monitoring_prometheus
+        bind *:30001
+        mode http
+        default_backend prometheus_backend
+
+      frontend stats
+        bind *:9000
+        mode http
+        stats enable
+        stats uri /stats
+        stats refresh 5s
+        stats auth admin:admin123
 
       backend kubernetes-backend
         mode tcp
@@ -36,6 +54,20 @@
         option tcp-check
         {% for host in groups['k8s_masters'] %}
         server {{ host }} {{ hostvars[host].ansible_default_ipv4.address }}:6443 check fall 3 rise 2
+        {% endfor %}
+
+      backend grafana_backend
+        mode http
+        balance roundrobin
+        {% for host in groups['k8s_masters'] %}
+        server {{ host }} {{ hostvars[host].ansible_default_ipv4.address }}:30000 check
+        {% endfor %}
+
+      backend prometheus_backend
+        mode http
+        balance roundrobin
+        {% for host in groups['k8s_masters'] %}
+        server {{ host }} {{ hostvars[host].ansible_default_ipv4.address }}:30001 check
         {% endfor %}
 
 - name: Ensure HAProxy is enabled and started

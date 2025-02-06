@@ -26,6 +26,8 @@
   become: yes
   vars_files:
     - vars.yml
+  tags:
+    - configure_masters
   tasks:
     - name: Include Keepalived setup
       include_tasks: keepalived.yml

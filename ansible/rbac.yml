@@ -101,6 +101,9 @@
         - apiGroups: ["autoscaling"]
           resources: ["*"]
           verbs: ["*"]
+        - apiGroups: ["tokenreviews.authentication.k8s.io"]
+          resources: ["*"]
+          verbs: ["*"]
 
         # Allow non-resource endpoints
         - nonResourceURLs: ["*"]

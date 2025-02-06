@@ -8,6 +8,8 @@ pod_network_cidr: "10.244.0.0/16"
 user_home: "/home/ubuntu"
 vip_interface: "eth0"
 
+grafana_admin_password: "grafana" # "{{ vault_grafana_password }}" Use Ansible Vault
+
 # Helm Configuration
 helm_version: "3.14.0"
 
@@ -19,4 +21,3 @@ prometheus_storage_size: "10Gi"
 # Grafana Configuration
 grafana_namespace: "monitoring"
 grafana_chart_version: "7.3.0"
-grafana_admin_password: "grafana" # "{{ vault_grafana_password }}" Use Ansible Vault
