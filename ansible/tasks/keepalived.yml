@@ -1,0 +1,27 @@
+---
+- name: Install Keepalived
+  apt:
+    name: keepalived
+    state: present
+    update_cache: yes
+
+- name: Create check script
+  copy:
+    dest: /usr/local/bin/check_haproxy.sh
+    mode: "0755"
+    content: |
+      #!/bin/bash
+      systemctl is-active --quiet haproxy
+      exit $?
+
+- name: Configure Keepalived
+  template:
+    src: files/keepalived/keepalived.j2
+    dest: /etc/keepalived/keepalived.conf
+
+- name: Enable and start Keepalived
+  systemd:
+    name: keepalived
+    state: restarted
+    enabled: yes
+    daemon_reload: yes

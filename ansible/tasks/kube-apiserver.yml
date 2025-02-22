@@ -1,0 +1,13 @@
+---
+- name: Ensure correct permissions for kube-apiserver.yaml
+  file:
+    path: /etc/kubernetes/manifests/kube-apiserver.yaml
+    mode: "0644"
+    owner: root
+    group: root
+
+- name: Update Apiserver configuration
+  template:
+    src: files/kubernetes/apiserver.yaml
+    dest: /etc/kubernetes/manifests/kube-apiserver.yaml
+  when: inventory_hostname in groups['k8s_masters']

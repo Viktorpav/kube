@@ -1,0 +1,418 @@
+---
+- name: Install required packages for k8s config
+  apt:
+    name: python3-kubernetes
+    update_cache: yes
+    state: present
+
+- name: Create kube-controller-manager ServiceAccount
+  k8s:
+    definition:
+      apiVersion: v1
+      kind: ServiceAccount
+      metadata:
+        name: kube-controller-manager
+        namespace: kube-system
+
+- name: Create ClusterRole for kube-controller-manager
+  k8s:
+    definition:
+      apiVersion: rbac.authorization.k8s.io/v1
+      kind: ClusterRole
+      metadata:
+        name: system:kube-controller-manager
+      rules:
+        # Full access to all core resources
+        - apiGroups: [""]
+          resources: ["*"]
+          verbs: ["*"]
+        # Explicit permissions for problematic resources
+        - apiGroups: [""]
+          resources:
+            - "events"
+            - "secrets"
+            - "serviceaccounts"
+            - "serviceaccounts/token"
+            - "pods"
+            - "nodes"
+          verbs: ["*"]
+        # Other necessary API groups
+        - apiGroups:
+            - "apps"
+            - "batch"
+            - "extensions"
+            - "policy"
+            - "storage.k8s.io"
+            - "authentication.k8s.io"
+            - "certificates.k8s.io"
+            - "coordination.k8s.io"
+          resources: ["*"]
+          verbs: ["*"]
+        # Required for leader election
+        - apiGroups: ["coordination.k8s.io"]
+          resources: ["leases"]
+          verbs: ["*"]
+        # Required for CSR approval
+        - apiGroups: ["certificates.k8s.io"]
+          resources: ["certificatesigningrequests"]
+          verbs: ["*"]
+        - apiGroups: ["crd.projectcalico.org"]
+          resources: ["*"]
+          verbs: ["*"]
+        # Add scheduling API permissions
+        - apiGroups: ["scheduling.k8s.io"]
+          resources: ["*"]
+          verbs: ["*"]
+        # Add admission control permissions
+        - apiGroups: ["admissionregistration.k8s.io"]
+          resources: ["*"]
+          verbs: ["*"]
+        # Explicitly add RBAC permissions
+        - apiGroups: ["rbac.authorization.k8s.io"]
+          resources: ["*"]
+          verbs: ["*"]
+        - apiGroups: ["networkpolicies.networking.k8s.io"]
+          resources: ["*"]
+          verbs: ["*"]
+        - apiGroups: ["networking.k8s.io"]
+          resources: ["*"]
+          verbs: ["*"]
+        - apiGroups: ["customresourcedefinitions.apiextensions.k8s.io"]
+          resources: ["*"]
+          verbs: ["*"]
+        - apiGroups: ["apiextensions.k8s.io"]
+          resources: ["*"]
+          verbs: ["*"]
+        - apiGroups: ["policy.networking.k8s.io"]
+          resources: ["*"]
+          verbs: ["*"]
+        - apiGroups: ["discovery.k8s.io"]
+          resources: ["*"]
+          verbs: ["*"]
+        - apiGroups: ["apiregistration.k8s.io"]
+          resources: ["*"]
+          verbs: ["*"]
+        - apiGroups: ["flowcontrol.apiserver.k8s.io"]
+          resources: ["*"]
+          verbs: ["*"]
+        - apiGroups: ["node.k8s.io"]
+          resources: ["*"]
+          verbs: ["*"]
+        - apiGroups: ["autoscaling"]
+          resources: ["*"]
+          verbs: ["*"]
+        - apiGroups: ["tokenreviews.authentication.k8s.io"]
+          resources: ["*"]
+          verbs: ["*"]
+
+        # Allow non-resource endpoints
+        - nonResourceURLs: ["*"]
+          verbs: ["*"]
+
+- name: Create ClusterRoleBinding
+  k8s:
+    definition:
+      apiVersion: rbac.authorization.k8s.io/v1
+      kind: ClusterRoleBinding
+      metadata:
+        name: system:kube-controller-manager
+      roleRef:
+        apiGroup: rbac.authorization.k8s.io
+        kind: ClusterRole
+        name: system:kube-controller-manager
+      subjects:
+        - kind: ServiceAccount
+          name: kube-controller-manager
+          namespace: kube-system
+        - kind: User
+          name: system:kube-controller-manager
+          apiGroup: rbac.authorization.k8s.io
+
+- name: Create kube-system Role
+  k8s:
+    definition:
+      apiVersion: rbac.authorization.k8s.io/v1
+      kind: Role
+      metadata:
+        name: system:controller-manager-service-account
+        namespace: kube-system
+      rules:
+        - apiGroups: [""]
+          resources: ["serviceaccounts", "secrets"]
+          verbs: ["*"]
+        - apiGroups: [""]
+          resources: ["events"]
+          verbs: ["*"]
+
+- name: Create kube-system RoleBinding
+  k8s:
+    definition:
+      apiVersion: rbac.authorization.k8s.io/v1
+      kind: RoleBinding
+      metadata:
+        name: system:controller-manager-service-account
+        namespace: kube-system
+      roleRef:
+        apiGroup: rbac.authorization.k8s.io
+        kind: Role
+        name: system:controller-manager-service-account
+      subjects:
+        - kind: ServiceAccount
+          name: kube-controller-manager
+          namespace: kube-system
+        - kind: User
+          name: system:kube-controller-manager
+          apiGroup: rbac.authorization.k8s.io
+
+# New part - Node Authorization
+- name: Create ClusterRole for nodes
+  k8s:
+    definition:
+      apiVersion: rbac.authorization.k8s.io/v1
+      kind: ClusterRole
+      metadata:
+        name: system:node
+      rules:
+        - apiGroups: [""]
+          resources:
+            - nodes
+            - nodes/status
+            - nodes/metrics
+            - nodes/proxy
+            - nodes/spec
+          verbs: ["*"]
+        - apiGroups: [""]
+          resources:
+            - pods
+            - services
+            - endpoints
+            - persistentvolumeclaims
+            - persistentvolumes
+            - configmaps
+            - secrets
+            - serviceaccounts
+            - serviceaccounts/token
+          verbs: ["get", "list", "watch", "create"]
+        - apiGroups: [""]
+          resources: ["events"]
+          verbs: ["create", "patch", "update"]
+        - apiGroups: ["coordination.k8s.io"]
+          resources: ["leases"]
+          verbs: ["*"]
+        - apiGroups: ["authentication.k8s.io"]
+          resources: ["tokenreviews"]
+          verbs: ["create"]
+        - apiGroups: ["authorization.k8s.io"]
+          resources: ["subjectaccessreviews"]
+          verbs: ["create"]
+        - apiGroups: ["certificates.k8s.io"]
+          resources: ["certificatesigningrequests"]
+          verbs: ["create", "get", "list", "watch"]
+
+- name: Create ClusterRoleBinding for all nodes
+  k8s:
+    definition:
+      apiVersion: rbac.authorization.k8s.io/v1
+      kind: ClusterRoleBinding
+      metadata:
+        name: system:nodes
+      subjects:
+        - apiGroup: rbac.authorization.k8s.io
+          kind: Group
+          name: system:nodes
+      roleRef:
+        apiGroup: rbac.authorization.k8s.io
+        kind: ClusterRole
+        name: system:node
+
+- name: Create individual node bindings
+  k8s:
+    definition:
+      apiVersion: rbac.authorization.k8s.io/v1
+      kind: ClusterRoleBinding
+      metadata:
+        name: "system:node:{{ item }}"
+      subjects:
+        - apiGroup: rbac.authorization.k8s.io
+          kind: User
+          name: "system:node:{{ item }}"
+      roleRef:
+        apiGroup: rbac.authorization.k8s.io
+        kind: ClusterRole
+        name: system:node
+  loop: "{{ groups['k8s_masters'] + groups['k8s_workers']|default([]) }}"
+
+# Add specific permissions for calico-node service account
+- name: Ensure calico-node service account token
+  k8s:
+    definition:
+      apiVersion: v1
+      kind: ServiceAccount
+      metadata:
+        name: calico-node
+        namespace: kube-system
+    merge_type:
+      - strategic-merge
+    state: present
+
+- name: Create More Specific ClusterRole for calico-node
+  k8s:
+    definition:
+      apiVersion: rbac.authorization.k8s.io/v1
+      kind: ClusterRole
+      metadata:
+        name: calico-node
+      rules:
+        # Nodes access
+        - apiGroups: [""]
+          resources:
+            - nodes
+            - nodes/status
+          verbs: ["get", "list", "watch", "update", "patch"]
+
+        # Pods access
+        - apiGroups: [""]
+          resources:
+            - pods
+            - pods/status
+          verbs: ["get", "list", "watch", "patch", "update"]
+
+        # Basic resources
+        - apiGroups: [""]
+          resources:
+            - namespaces
+            - serviceaccounts
+            - configmaps
+            - endpoints
+            - services
+            - events
+          verbs: ["get", "list", "watch", "create", "update", "patch"]
+
+        # Special access for calico-config
+        - apiGroups: [""]
+          resources:
+            - configmaps
+          resourceNames: ["calico-config"]
+          verbs: ["get", "list", "watch", "update"]
+
+        # Networking resources
+        - apiGroups: ["networking.k8s.io"]
+          resources:
+            - networkpolicies
+          verbs: ["get", "list", "watch"]
+
+        # Host networking setup
+        - apiGroups: [""]
+          resources:
+            - nodes/status
+          verbs: ["patch"]
+
+        # Calico CRDs
+        - apiGroups: ["crd.projectcalico.org"]
+          resources: ["*"]
+          verbs: ["*"]
+
+        # Leader election and coordination
+        - apiGroups: ["coordination.k8s.io"]
+          resources: ["leases"]
+          verbs: ["create", "get", "list", "update", "delete"]
+
+        # Authentication
+        - apiGroups: ["authentication.k8s.io"]
+          resources: ["tokenreviews"]
+          verbs: ["create"]
+
+        # Authorization
+        - apiGroups: ["authorization.k8s.io"]
+          resources: ["subjectaccessreviews"]
+          verbs: ["create"]
+
+        # Certificates
+        - apiGroups: ["certificates.k8s.io"]
+          resources: ["certificatesigningrequests"]
+          verbs: ["get", "list", "watch", "create", "update", "delete"]
+
+        - apiGroups: [""]
+          resources:
+            - "serviceaccounts"
+            - "serviceaccounts/token"
+          verbs: ["create", "get", "list", "watch"]
+
+        - apiGroups: ["discovery.k8s.io"]
+          resources:
+            - "endpointslices"
+          verbs: ["get", "list", "watch"]
+
+        - apiGroups: ["policy.networking.k8s.io"]
+          resources:
+            - "adminnetworkpolicies"
+            - "baselineadminnetworkpolicies"
+          verbs: ["get", "list", "watch"]
+
+- name: Create ClusterRoleBinding for calico-node with explicit permissions
+  k8s:
+    definition:
+      apiVersion: rbac.authorization.k8s.io/v1
+      kind: ClusterRoleBinding
+      metadata:
+        name: calico-node
+      subjects:
+        - kind: ServiceAccount
+          name: calico-node
+          namespace: kube-system
+      roleRef:
+        apiGroup: rbac.authorization.k8s.io
+        kind: ClusterRole
+        name: calico-node
+
+- name: Create cluster-admin binding for kubernetes-admin
+  k8s:
+    definition:
+      apiVersion: rbac.authorization.k8s.io/v1
+      kind: ClusterRoleBinding
+      metadata:
+        name: kubernetes-admin
+      roleRef:
+        apiGroup: rbac.authorization.k8s.io
+        kind: ClusterRole
+        name: cluster-admin
+      subjects:
+        - apiGroup: rbac.authorization.k8s.io
+          kind: User
+          name: kubernetes-admin
+
+- name: Create kube-controller-manager ServiceAccount
+  k8s:
+    definition:
+      apiVersion: v1
+      kind: ServiceAccount
+      metadata:
+        name: admin-user
+        namespace: kube-system
+
+- name: Create kube-controller-manager ServiceAccount
+  k8s:
+    definition:
+      apiVersion: rbac.authorization.k8s.io/v1
+      kind: ClusterRoleBinding
+      metadata:
+        name: admin-user-binding
+      roleRef:
+        apiGroup: rbac.authorization.k8s.io
+        kind: ClusterRole
+        name: cluster-admin
+      subjects:
+        - kind: ServiceAccount
+          name: admin-user
+          namespace: kube-system
+        - kind: User
+          name: kubernetes-admin
+          apiGroup: rbac.authorization.k8s.io
+
+- name: Restart kube-controller-manager pods
+  shell: |
+    kubectl -n kube-system delete pod -l component=kube-controller-manager
+
+- name: Wait for kube-controller-manager pods to be ready
+  shell: |
+    kubectl -n kube-system wait pod -l component=kube-controller-manager --for=condition=Ready --timeout=300s

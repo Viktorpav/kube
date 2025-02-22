@@ -18,7 +18,7 @@
     - vars.yml
   tasks:
     - name: Include common Kubernetes setup
-      include_tasks: common.yml
+      include_tasks: tasks/common.yml
 
 - name: Setup Load Balancers
   hosts: load_balancers
@@ -30,10 +30,10 @@
     - configure_masters
   tasks:
     - name: Include Keepalived setup
-      include_tasks: keepalived.yml
+      include_tasks: tasks/keepalived.yml
 
     - name: Include HAProxy setup
-      include_tasks: haproxy.yml
+      include_tasks: tasks/haproxy.yml
 
 - name: Setup Kubernetes Masters
   hosts: k8s_masters
@@ -43,21 +43,21 @@
     - vars.yml
   tasks:
     - name: Include Master initialization
-      include_tasks: master-init.yml
+      include_tasks: tasks/master-init.yml
       when: inventory_hostname == "master-1"
 
     - name: Include Master join
-      include_tasks: master-join.yml
+      include_tasks: tasks/master-join.yml
       when:
         - inventory_hostname in groups['k8s_masters']
         - inventory_hostname != "master-1"
 
     - name: Include Kubeconfig setup
-      include_tasks: kubeconfig.yml
+      include_tasks: tasks/kubeconfig.yml
       when: inventory_hostname in groups['k8s_masters']
 
     - name: Include Calico setup
-      include_tasks: calico.yml
+      include_tasks: tasks/calico.yml
       when: inventory_hostname == "master-1"
 
 - name: Configure Kubernetes Masters
@@ -70,10 +70,13 @@
     - configure_masters
   tasks:
     - name: Configure Masters Controller Manager
-      include_tasks: kube_controller_manager.yml
+      include_tasks: tasks/kube-controller-manager.yml
+
+    - name: Configure Masters Apiserver
+      include_tasks: tasks/kube-apiserver.yml
 
     - name: Configure Masters RBAC
-      include_tasks: rbac.yml
+      include_tasks: tasks/rbac.yml
       when: inventory_hostname == "master-1"
 
 - name: Setup Kubernetes Workers
@@ -84,10 +87,10 @@
     - vars.yml
   tasks:
     - name: Include common Kubernetes setup
-      include_tasks: common.yml
+      include_tasks: tasks/common.yml
 
     - name: Include worker join
-      include_tasks: worker-join.yml
+      include_tasks: tasks/worker-join.yml
 
 - name: Setup Kubernetes Monitoring
   hosts: k8s_masters
@@ -99,9 +102,9 @@
     - configure_masters
   tasks:
     - name: Include Helm Installation
-      include_tasks: helm.yml
+      include_tasks: tasks/helm.yml
       when: inventory_hostname == "master-1"
 
     - name: Include Prometheus Operator configuration
-      include_tasks: monitoring.yml
+      include_tasks: tasks/monitoring.yml
       when: inventory_hostname == "master-1"

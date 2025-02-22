@@ -5,6 +5,7 @@
     namespace: monitoring
     create_namespace: true
     chart_ref: prometheus-community/kube-prometheus-stack
+    timeout: 15m
     values:
       grafana:
         adminPassword: "{{ grafana_admin_password }}"

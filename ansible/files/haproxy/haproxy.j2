@@ -1,0 +1,72 @@
+global
+    user haproxy
+    group haproxy
+    daemon
+    maxconn 4096
+    log /dev/log local0
+    log /dev/log local1 notice
+
+defaults
+    mode tcp
+    timeout connect 10s
+    timeout client 50s
+    timeout server 50s
+    log global
+
+# Kubernetes API Frontend
+frontend kubernetes-api
+    bind *:6443
+    mode tcp
+    default_backend kubernetes-backend
+
+# Grafana Frontend
+frontend monitoring_grafana
+    bind *:30000
+    mode http
+    default_backend grafana_backend
+
+# Prometheus Frontend
+frontend monitoring_prometheus
+    bind *:30001
+    mode http
+    default_backend prometheus_backend
+
+# Statistics Frontend
+frontend stats
+    bind *:9000
+    mode http
+    stats enable
+    stats uri /stats
+    stats refresh 5s
+    stats auth admin:admin123
+    stats hide-version
+
+# Kubernetes API Backend
+backend kubernetes-backend
+    mode tcp
+    balance roundrobin
+    option tcp-check
+    option log-health-checks
+    timeout server 10s
+    timeout connect 5s
+{% for host in groups['k8s_masters'] %}
+server {{ host }} {{ hostvars[host].ansible_default_ipv4.address }}:6443 check inter 2000 rise 2 fall 3
+{% endfor %}
+
+# Grafana Backend
+backend grafana_backend
+    mode http
+    balance roundrobin
+    option httpchk GET /
+{% for host in groups['k8s_masters'] %}
+server {{ host }} {{ hostvars[host].ansible_default_ipv4.address }}:30000 check
+{% endfor %}
+
+# Prometheus Backend
+backend prometheus_backend
+    mode http
+    balance roundrobin
+    option httpchk GET /-/healthy
+{% for host in groups['k8s_masters'] %}
+server {{ host }} {{ hostvars[host].ansible_default_ipv4.address }}:30001 check
+{% endfor %}

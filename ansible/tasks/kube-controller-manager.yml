@@ -1,0 +1,20 @@
+---
+- name: Ensure correct permissions for controller-manager.conf
+  file:
+    path: /etc/kubernetes/controller-manager.conf
+    mode: "0644"
+    owner: root
+    group: root
+
+- name: Ensure correct permissions for kube-controller-manager.yaml
+  file:
+    path: /etc/kubernetes/manifests/kube-controller-manager.yaml
+    mode: "0644"
+    owner: root
+    group: root
+
+- name: Deploy controller manager configuration
+  template:
+    src: files/kubernetes/controller-manager.yaml
+    dest: /etc/kubernetes/manifests/kube-controller-manager.yaml
+  when: inventory_hostname in groups['k8s_masters']

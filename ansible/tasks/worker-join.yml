@@ -26,6 +26,6 @@
   register: node_ready
   delegate_to: "{{ groups['k8s_masters'] | first }}"
   until: node_ready.stdout == "True"
-  retries: 30
-  delay: 10
+  retries: 10
+  delay: 20
   changed_when: false

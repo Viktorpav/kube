@@ -1,0 +1,42 @@
+global_defs {
+    router_id K8S_MASTER_{{ router_id }}
+    enable_script_security
+    script_user root
+}
+
+vrrp_script check_haproxy {
+    script "/usr/local/bin/check_haproxy.sh"
+    interval 2
+    weight -10
+    fall 2
+    rise 1
+}
+
+vrrp_instance VI_1 {
+    state {{ 'MASTER' if inventory_hostname == 'lb-1' else 'BACKUP' }}
+    interface {{ vip_interface }}
+    virtual_router_id {{ router_id }}
+    priority {{ '100' if inventory_hostname == 'lb-1' else '90' }}
+    advert_int 1
+    
+    authentication {
+        auth_type PASS
+        auth_pass {{ keepalived_auth_pass }}
+    }
+    
+    virtual_ipaddress {
+        {{ vip_address }}/24
+    }
+    
+    unicast_peer {
+        {% for host in groups['load_balancers'] %}
+        {% if host != inventory_hostname %}
+        {{ hostvars[host].ansible_default_ipv4.address }}
+        {% endif %}
+        {% endfor %}
+    }
+    
+    track_script {
+        check_haproxy
+    }
+}

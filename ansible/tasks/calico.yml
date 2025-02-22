@@ -14,8 +14,7 @@
     replace: '- name: CALICO_IPV4POOL_CIDR\n  value: "{{ pod_network_cidr }}"'
 
 - name: Apply Calico manifest
-  become: yes
-  become_user: ubuntu
+  become: true
   environment:
     KUBECONFIG: "{{ user_home }}/.kube/config"
   command: kubectl apply -f {{ user_home }}/calico.yaml
@@ -25,47 +24,42 @@
   until: calico_apply.rc == 0
 
 - name: Wait for Calico pods to be ready
-  become: yes
-  become_user: ubuntu
+  become: true
   environment:
     KUBECONFIG: "{{ user_home }}/.kube/config"
-  shell: kubectl wait --for=condition=ready pod -l k8s-app=calico-node -n kube-system --timeout=300s
+  command: kubectl wait --for=condition=ready pod -l k8s-app=calico-node -n kube-system --timeout=300s
   register: wait_calico
   retries: 10
   delay: 30
   until: wait_calico.rc == 0
 
 - name: Wait for Calico API resources to be ready
-  become: yes
-  become_user: ubuntu
+  become: true
   environment:
     KUBECONFIG: "{{ user_home }}/.kube/config"
-  shell: |
-    kubectl wait --for=condition=Established crd/ippools.crd.projectcalico.org --timeout=60s
+  command: kubectl wait --for=condition=Established crd/ippools.crd.projectcalico.org --timeout=60s
   register: wait_crd
   retries: 10
   delay: 10
   until: wait_crd.rc == 0
 
 - name: Wait for IPPool to be created
-  become: yes
-  become_user: ubuntu
+  become: true
   environment:
     KUBECONFIG: "{{ user_home }}/.kube/config"
-  shell: kubectl get ippool default-ipv4-ippool
+  command: kubectl get ippool default-ipv4-ippool
   register: ippool_check
   retries: 12
   delay: 10
   until: ippool_check.rc == 0
 
 - name: Configure Calico IPPool CIDR
-  become: yes
-  become_user: ubuntu
+  become: true
   environment:
     KUBECONFIG: "{{ user_home }}/.kube/config"
-  shell: |
-    kubectl patch ippool default-ipv4-ippool \
-    --patch '{"spec":{"cidr":"{{ pod_network_cidr }}"}}' \
+  command: >
+    kubectl patch ippool default-ipv4-ippool 
+    --patch '{"spec":{"cidr":"{{ pod_network_cidr }}"}}' 
     --type=merge
   register: ippool_patch
   retries: 6
@@ -73,11 +67,10 @@
   until: ippool_patch.rc == 0
 
 - name: Wait for cluster network functionality
-  become: yes
-  become_user: ubuntu
+  become: true
   environment:
     KUBECONFIG: "{{ user_home }}/.kube/config"
-  shell: kubectl get nodes -o jsonpath='{.items[*].status.conditions[?(@.type=="Ready")].status}'
+  command: kubectl get nodes -o jsonpath='{.items[*].status.conditions[?(@.type=="Ready")].status}'
   register: nodes_ready
   retries: 20
   delay: 15
