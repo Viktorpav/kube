@@ -27,7 +27,7 @@ spec:
         - --etcd-cafile=/etc/kubernetes/pki/etcd/ca.crt
         - --etcd-certfile=/etc/kubernetes/pki/apiserver-etcd-client.crt
         - --etcd-keyfile=/etc/kubernetes/pki/apiserver-etcd-client.key
-        - --etcd-servers={% for host in groups['k8s_masters'] %}https://{{ hostvars[host].ansible_default_ipv4.address }}:2379{% if not loop.last %},{% endif %}{% endfor %}
+        - --etcd-servers={% for host in groups['etcd_nodes'] %}https://{{ hostvars[host].ansible_host }}:2379{% if not loop.last %},{% endif %}{% endfor %}
 
         - --kubelet-client-certificate=/etc/kubernetes/pki/apiserver-kubelet-client.crt
         - --kubelet-client-key=/etc/kubernetes/pki/apiserver-kubelet-client.key

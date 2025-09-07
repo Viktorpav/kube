@@ -1,0 +1,34 @@
+version: '3.8'
+services:
+  etcd:
+    image: quay.io/coreos/etcd:v3.5.9-arm64
+    container_name: etcd-{{ inventory_hostname }}
+    restart: always
+    network_mode: host
+    volumes:
+      - ./data:/etcd-data
+      - ./certs:/etc/kubernetes/pki/etcd
+    environment:
+      - ETCD_NAME={{ inventory_hostname }}
+      - ETCD_DATA_DIR=/etcd-data
+      - ETCD_LISTEN_PEER_URLS=https://0.0.0.0:2380
+      - ETCD_LISTEN_CLIENT_URLS=https://0.0.0.0:2379
+      - ETCD_INITIAL_ADVERTISE_PEER_URLS=https://{{ hostvars[inventory_hostname]['ansible_host'] | default('192.168.0.12') }}:2380
+      - ETCD_ADVERTISE_CLIENT_URLS=https://{{ hostvars[inventory_hostname]['ansible_host'] | default('192.168.0.12') }}:2379
+      - ETCD_INITIAL_CLUSTER={% for host in groups['etcd_nodes'] %}{{ hostvars[host].inventory_hostname }}=https://{% if host == 'mac-etcd' %}{{ hostvars[host]['ansible_host'] | default('192.168.0.12') }}{% else %}{{ hostvars[host]['ansible_default_ipv4']['address'] }}{% endif %}:2380{% if not loop.last %},{% endif %}{% endfor %}
+      - ETCD_INITIAL_CLUSTER_TOKEN=etcd-cluster-token
+      - ETCD_INITIAL_CLUSTER_STATE={{ etcd_cluster_state }}
+      - ETCD_CERT_FILE=/etc/kubernetes/pki/etcd/{{ inventory_hostname }}.crt
+      - ETCD_KEY_FILE=/etc/kubernetes/pki/etcd/{{ inventory_hostname }}.key
+      - ETCD_TRUSTED_CA_FILE=/etc/kubernetes/pki/etcd/ca.crt
+      - ETCD_CLIENT_CERT_AUTH=true
+      - ETCD_PEER_CERT_FILE=/etc/kubernetes/pki/etcd/{{ inventory_hostname }}-peer.crt
+      - ETCD_PEER_KEY_FILE=/etc/kubernetes/pki/etcd/{{ inventory_hostname }}-peer.key
+      - ETCD_PEER_TRUSTED_CA_FILE=/etc/kubernetes/pki/etcd/ca.crt
+      - ETCD_PEER_CLIENT_CERT_AUTH=true
+    command: >
+      etcd
+      --enable-v2=false
+      --logger=zap
+      --log-outputs=stderr
+      --log-level=info
