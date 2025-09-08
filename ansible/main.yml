@@ -6,55 +6,11 @@
   vars:
     etcd_pki_dir: "{{ ansible_env.HOME }}/etcd_pki"
     etcd_primary_node: "master-1"
-  pre_tasks:
-    - name: Wait for cloud-init to complete
-      ansible.builtin.command: cloud-init status --wait
-      changed_when: false
-      failed_when: false
-      timeout: 300
-
-    - name: Ensure python3-pip is installed
-      ansible.builtin.apt:
-        name: python3-pip
-        state: present
-        update_cache: yes
-      when: ansible_os_family == 'Debian'
-
-    - name: Install required Python packages for certificate operations
-      ansible.builtin.pip:
-        name:
-          - cryptography
-          - pyOpenSSL
-        state: present
-      run_once: true
-
-    - name: Check if community.crypto collection is installed
-      ansible.builtin.command:
-        cmd: ansible-galaxy collection list community.crypto
-      register: crypto_collection_check
-      failed_when: false
-      changed_when: false
-      run_once: true
-      delegate_to: localhost
-      become: no
-
-    - name: Install community.crypto collection if not present
-      ansible.builtin.command:
-        cmd: ansible-galaxy collection install community.crypto --force
-      when: crypto_collection_check.rc != 0
-      run_once: true
-      delegate_to: localhost
-      become: no
-
-    - name: Create etcd certificate directory on primary node
-      ansible.builtin.file:
-        path: "{{ etcd_pki_dir }}"
-        state: directory
-        mode: "0755"
-        owner: "{{ ansible_user | default(ansible_env.USER) }}"
-        group: "{{ ansible_user | default(ansible_env.USER) }}"
-      delegate_to: "{{ etcd_primary_node }}"
-      run_once: true
+  vars_files:
+    - vars.yml
+  tasks:
+    - name: Include cluster preparation tasks
+      include_tasks: tasks/cluster-preparation.yml
 
 - name: Install Common Kubernetes Components
   hosts: k8s_cluster
@@ -66,87 +22,28 @@
     - name: Include common Kubernetes setup
       include_tasks: tasks/common.yml
 
-- name: Generate and Distribute Etcd Certificates
-  hosts: etcd_nodes:!mac-etcd
+- name: Setup External Etcd
+  hosts: k8s_masters
   gather_facts: yes
   become: yes
   vars_files:
     - vars.yml
+  vars:
+    etcd_pki_dir: "{{ ansible_env.HOME }}/etcd_pki"
+    etcd_primary_node: "master-1"
   tasks:
-    - name: Create etcd certificate directory on all etcd nodes
-      ansible.builtin.file:
-        path: "/etc/kubernetes/pki/etcd"
-        state: directory
-        mode: "0755"
-        owner: root
-        group: root
-      when: "'k8s_masters' in group_names"
+    - name: Include etcd certificate generation and distribution
+      include_tasks: tasks/etcd-setup.yml
 
-    - name: Generate etcd certificates on primary node
-      block:
-        - name: Include etcd certificate tasks
-          include_tasks: tasks/etcd-certs.yml
-      delegate_to: "{{ etcd_primary_node }}"
-      run_once: true
-
-- name: Setup External Etcd (mac-etcd only)
+- name: Deploy Etcd Container on Mac
   hosts: mac-etcd
-  gather_facts: no
+  gather_facts: yes
   become: no
   vars_files:
     - vars.yml
-  vars:
-    etcd_pki_dir: "{{ hostvars['master-1']['ansible_env']['HOME'] }}/etcd_pki"
-    etcd_primary_node: "master-1"
   tasks:
-    - name: Fetch certificates for external etcd
-      ansible.builtin.fetch:
-        src: "{{ etcd_pki_dir }}/{{ item }}"
-        dest: "/tmp/k8s-etcd-certs/"
-        flat: yes
-      delegate_to: "{{ etcd_primary_node }}"
-      become: yes
-      loop:
-        - ca.crt
-        - "{{ inventory_hostname }}.crt"
-        - "{{ inventory_hostname }}.key"
-
-    - name: Ensure etcd directory exists on mac-etcd
-      ansible.builtin.file:
-        path: "~/k8s-etcd/certs"
-        state: directory
-        mode: "0755"
-
-    - name: Deploy certificates to mac-etcd
-      ansible.builtin.copy:
-        src: "/tmp/k8s-etcd-certs/{{ item }}"
-        dest: "~/k8s-etcd/certs/{{ item }}"
-        mode: "0644"
-        backup: yes
-      loop:
-        - ca.crt
-        - "{{ inventory_hostname }}.crt"
-        - "{{ inventory_hostname }}.key"
-
-    - name: Deploy docker-compose on mac-etcd
-      ansible.builtin.template:
-        src: files/kubernetes/etcd-docker-compose.yml.j2
-        dest: "~/k8s-etcd/docker-compose.yml"
-        mode: "0644"
-        backup: yes
-
-    - name: Start etcd container on mac-etcd
-      ansible.builtin.command:
-        cmd: docker compose up -d
-        chdir: "~/k8s-etcd"
-      register: docker_compose_result
-      changed_when: "'Started' in docker_compose_result.stdout or 'Created' in docker_compose_result.stdout"
-
-    - name: Clean up temporary certificate files
-      ansible.builtin.file:
-        path: "/tmp/k8s-etcd-certs"
-        state: absent
-      delegate_to: localhost
+    - name: Include mac etcd deployment
+      include_tasks: tasks/mac-etcd-deploy.yml
 
 - name: Setup Load Balancers
   hosts: load_balancers
@@ -163,79 +60,18 @@
     - name: Include HAProxy setup
       include_tasks: tasks/haproxy.yml
 
-- name: Initialize first master with external etcd
+- name: Initialize First Master with External Etcd
   hosts: master-1
   gather_facts: yes
   become: yes
   vars_files:
     - vars.yml
+  vars:
+    etcd_pki_dir: "{{ ansible_env.HOME }}/etcd_pki"
+    etcd_primary_node: "master-1"
   tasks:
-    - name: Copy kubeadm config template
-      ansible.builtin.template:
-        src: files/kubernetes/kubeadm-config.yaml.j2
-        dest: /tmp/kubeadm-config.yaml
-        mode: "0644"
-
-    - name: Fetch etcd CA certificate for kubeadm
-      ansible.builtin.fetch:
-        src: "{{ etcd_pki_dir }}/ca.crt"
-        dest: "/tmp/k8s-etcd-ca/"
-        flat: yes
-      delegate_to: "{{ etcd_primary_node }}"
-      become: yes
-
-    - name: Fetch etcd client certificates for kubeadm
-      ansible.builtin.fetch:
-        src: "{{ etcd_pki_dir }}/{{ item }}"
-        dest: "/tmp/k8s-etcd-client/"
-        flat: yes
-      delegate_to: "{{ etcd_primary_node }}"
-      become: yes
-      loop:
-        - apiserver-etcd-client.crt
-        - apiserver-etcd-client.key
-
-    - name: Ensure etcd pki directory exists on master
-      ansible.builtin.file:
-        path: "/etc/kubernetes/pki/etcd"
-        state: directory
-        mode: "0755"
-        owner: root
-        group: root
-
-    - name: Deploy etcd CA certificate to master
-      ansible.builtin.copy:
-        src: "/tmp/k8s-etcd-ca/ca.crt"
-        dest: "/etc/kubernetes/pki/etcd/ca.crt"
-        mode: "0644"
-        owner: root
-        group: root
-
-    - name: Deploy etcd client certificates to master
-      ansible.builtin.copy:
-        src: "/tmp/k8s-etcd-client/{{ item }}"
-        dest: "/etc/kubernetes/pki/etcd/{{ item }}"
-        mode: "0644"
-        owner: root
-        group: root
-      loop:
-        - apiserver-etcd-client.crt
-        - apiserver-etcd-client.key
-
-    - name: Initialize Kubernetes cluster with external etcd
-      ansible.builtin.command: kubeadm init --config=/tmp/kubeadm-config.yaml
-      register: kubeadm_init
-      changed_when: true
-
-    - name: Clean up temporary etcd certificate files
-      ansible.builtin.file:
-        path: "{{ item }}"
-        state: absent
-      loop:
-        - "/tmp/k8s-etcd-ca"
-        - "/tmp/k8s-etcd-client"
-      delegate_to: localhost
-      become: no
+    - name: Include first master initialization
+      include_tasks: tasks/first-master-init.yml
 
 - name: Setup Kubernetes Masters
   hosts: k8s_masters
@@ -307,10 +143,6 @@
   vars_files:
     - vars.yml
   tasks:
-    # Remove this since workers are part of k8s_cluster and already got common setup
-    # - name: Include common Kubernetes setup
-    #   include_tasks: tasks/common.yml
-
     - name: Wait for masters to be available
       ansible.builtin.wait_for:
         port: 6443

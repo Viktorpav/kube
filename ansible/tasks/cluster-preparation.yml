@@ -1,0 +1,49 @@
+---
+- name: Wait for cloud-init to complete
+  ansible.builtin.command: cloud-init status --wait
+  changed_when: false
+  failed_when: false
+  timeout: 300
+
+- name: Ensure python3-pip is installed
+  ansible.builtin.apt:
+    name: python3-pip
+    state: present
+    update_cache: yes
+  when: ansible_os_family == 'Debian'
+
+- name: Install required Python packages for certificate operations
+  ansible.builtin.pip:
+    name:
+      - cryptography
+      - pyOpenSSL
+    state: present
+  run_once: true
+
+- name: Check if community.crypto collection is installed
+  ansible.builtin.command:
+    cmd: ansible-galaxy collection list community.crypto
+  register: crypto_collection_check
+  failed_when: false
+  changed_when: false
+  run_once: true
+  delegate_to: localhost
+  become: false
+
+- name: Install community.crypto collection if not present
+  ansible.builtin.command:
+    cmd: ansible-galaxy collection install community.crypto --force
+  when: crypto_collection_check.rc != 0
+  run_once: true
+  delegate_to: localhost
+  become: false
+
+- name: Create etcd certificate directory on primary node
+  ansible.builtin.file:
+    path: "{{ etcd_pki_dir }}"
+    state: directory
+    mode: "0755"
+    owner: "{{ ansible_user | default(ansible_env.USER) }}"
+    group: "{{ ansible_user | default(ansible_env.USER) }}"
+  delegate_to: "{{ etcd_primary_node }}"
+  run_once: true

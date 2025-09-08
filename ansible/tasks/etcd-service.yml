@@ -1,8 +1,4 @@
 ---
-- name: Determine if cluster state is 'new' or 'existing'
-  ansible.builtin.set_fact:
-    etcd_cluster_state: "{{ 'new' if etcd_primary_node == inventory_hostname else 'existing' }}"
-
 - name: Create etcd directories on all nodes
   ansible.builtin.file:
     path: /etc/kubernetes/pki/etcd

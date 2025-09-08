@@ -1,0 +1,32 @@
+---
+- name: Create etcd certificate directory on all etcd nodes
+  ansible.builtin.file:
+    path: "/etc/kubernetes/pki/etcd"
+    state: directory
+    mode: "0755"
+    owner: root
+    group: root
+  when: "'k8s_masters' in group_names"
+
+- name: Generate etcd certificates on primary node
+  block:
+    - name: Include etcd certificate tasks
+      include_tasks: etcd-certs.yml
+  delegate_to: "{{ etcd_primary_node }}"
+  run_once: true
+
+- name: Fetch certificates for external etcd
+  ansible.builtin.fetch:
+    src: "{{ etcd_pki_dir }}/{{ item }}"
+    dest: "/tmp/k8s-etcd-certs/"
+    flat: yes
+  delegate_to: "{{ etcd_primary_node }}"
+  loop:
+    - ca.crt
+    - mac-etcd.crt
+    - mac-etcd.key
+    - mac-etcd-peer.crt
+    - mac-etcd-peer.key
+    - apiserver-etcd-client.crt
+    - apiserver-etcd-client.key
+  run_once: true

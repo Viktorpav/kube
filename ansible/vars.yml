@@ -9,12 +9,11 @@ user_home: "/home/ubuntu"
 vip_interface: "eth0"
 etcd_primary_node: "master-1"
 etcd_pki_dir: "/etc/kubernetes/pki/etcd"
-etcd_cluster_state: "existing" # "new" for first-time setup, "existing" for adding nodes
 etcd_endpoints: >-
   {% for host in groups['etcd_nodes'] -%}
   https://{{ hostvars[host].ansible_host }}:2379{% if not loop.last %},{% endif %}
   {%- endfor %}
-
+etcd_cluster_state: "new"
 grafana_admin_password: "grafana" # "{{ vault_grafana_password }}" Use Ansible Vault
 
 # Helm Configuration

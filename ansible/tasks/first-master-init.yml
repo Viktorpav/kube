@@ -1,0 +1,71 @@
+---
+- name: Copy kubeadm config template
+  ansible.builtin.template:
+    src: files/kubernetes/kubeadm-config.yaml.j2
+    dest: /tmp/kubeadm-config.yaml
+    mode: "0644"
+
+- name: Fetch etcd CA certificate for kubeadm
+  ansible.builtin.fetch:
+    src: "{{ etcd_pki_dir }}/ca.crt"
+    dest: "/tmp/k8s-etcd-ca/"
+    flat: yes
+  delegate_to: "{{ etcd_primary_node }}"
+
+- name: Fetch etcd client certificates for kubeadm
+  ansible.builtin.fetch:
+    src: "{{ etcd_pki_dir }}/{{ item }}"
+    dest: "/tmp/k8s-etcd-client/"
+    flat: yes
+  delegate_to: "{{ etcd_primary_node }}"
+  loop:
+    - apiserver-etcd-client.crt
+    - apiserver-etcd-client.key
+
+- name: Ensure etcd pki directory exists on master
+  ansible.builtin.file:
+    path: "/etc/kubernetes/pki/etcd"
+    state: directory
+    mode: "0755"
+    owner: root
+    group: root
+
+- name: Deploy etcd CA certificate to master
+  ansible.builtin.copy:
+    src: "/tmp/k8s-etcd-ca/ca.crt"
+    dest: "/etc/kubernetes/pki/etcd/ca.crt"
+    mode: "0644"
+    owner: root
+    group: root
+
+- name: Deploy etcd client certificates to master
+  ansible.builtin.copy:
+    src: "/tmp/k8s-etcd-client/{{ item }}"
+    dest: "/etc/kubernetes/pki/etcd/{{ item }}"
+    mode: "0644"
+    owner: root
+    group: root
+  loop:
+    - apiserver-etcd-client.crt
+    - apiserver-etcd-client.key
+
+- name: Check if Kubernetes is already initialized
+  stat:
+    path: /etc/kubernetes/admin.conf
+  register: k8s_initialized
+
+- name: Initialize Kubernetes cluster with external etcd
+  ansible.builtin.command: kubeadm init --config=/tmp/kubeadm-config.yaml
+  register: kubeadm_init
+  changed_when: true
+  when: not k8s_initialized.stat.exists
+
+- name: Clean up temporary etcd certificate files
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "/tmp/k8s-etcd-ca"
+    - "/tmp/k8s-etcd-client"
+  delegate_to: localhost
+  become: false
