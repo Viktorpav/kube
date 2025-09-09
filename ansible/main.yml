@@ -1,49 +1,36 @@
 ---
-- name: Prepare Kubernetes Cluster
+- name: Prepare Cluster Nodes
   hosts: k8s_cluster
   gather_facts: yes
   become: yes
-  vars:
-    etcd_pki_dir: "{{ ansible_env.HOME }}/etcd_pki"
-    etcd_primary_node: "master-1"
   vars_files:
     - vars.yml
   tasks:
     - name: Include cluster preparation tasks
       include_tasks: tasks/cluster-preparation.yml
-
-- name: Install Common Kubernetes Components
-  hosts: k8s_cluster
-  gather_facts: yes
-  become: yes
-  vars_files:
-    - vars.yml
-  tasks:
     - name: Include common Kubernetes setup
       include_tasks: tasks/common.yml
 
-- name: Setup External Etcd
-  hosts: k8s_masters
+- name: Setup External Etcd Cluster
+  hosts: etcd_nodes
   gather_facts: yes
   become: yes
   vars_files:
     - vars.yml
   vars:
-    etcd_pki_dir: "{{ ansible_env.HOME }}/etcd_pki"
-    etcd_primary_node: "master-1"
+    etcd_pki_dir: "{{ '/root/etcd_pki' if 'k8s_masters' in group_names else ansible_env.HOME + '/etcd_pki' }}"
+    etcd_primary_node: "{{ groups['etcd_nodes'][0] }}"
   tasks:
-    - name: Include etcd certificate generation and distribution
+    - name: Include etcd certificate generation and fetching
       include_tasks: tasks/etcd-setup.yml
-
-- name: Deploy Etcd Container on Mac
-  hosts: mac-etcd
-  gather_facts: yes
-  become: no
-  vars_files:
-    - vars.yml
-  tasks:
-    - name: Include mac etcd deployment
-      include_tasks: tasks/mac-etcd-deploy.yml
+    - name: Include etcd service deployment
+      include_tasks: tasks/etcd-service.yml
+  handlers:
+    - name: restart etcd
+      ansible.builtin.command:
+        cmd: "{{ 'docker-compose' if docker_compose_check.rc == 0 else 'docker compose' }} restart"
+        chdir: "{{ etcd_data_dir }}"
+      become: "{{ become_for_task }}"
 
 - name: Setup Load Balancers
   hosts: load_balancers
@@ -56,25 +43,21 @@
   tasks:
     - name: Include Keepalived setup
       include_tasks: tasks/keepalived.yml
-
     - name: Include HAProxy setup
       include_tasks: tasks/haproxy.yml
 
-- name: Initialize First Master with External Etcd
-  hosts: master-1
+- name: Initialize First Master
+  hosts: "{{ groups['k8s_masters'][0] }}"
   gather_facts: yes
   become: yes
   vars_files:
     - vars.yml
-  vars:
-    etcd_pki_dir: "{{ ansible_env.HOME }}/etcd_pki"
-    etcd_primary_node: "master-1"
   tasks:
     - name: Include first master initialization
-      include_tasks: tasks/first-master-init.yml
+      include_tasks: tasks/master-init.yml
 
-- name: Setup Kubernetes Masters
-  hosts: k8s_masters
+- name: Setup Other Kubernetes Masters
+  hosts: k8s_masters:!{{ groups['k8s_masters'][0] }}
   gather_facts: yes
   become: yes
   serial: 1
@@ -84,57 +67,37 @@
     - name: Wait for first master to be ready
       ansible.builtin.wait_for:
         port: 6443
-        host: "{{ hostvars['master-1']['ansible_default_ipv4']['address'] | default(hostvars['master-1']['ansible_host']) }}"
+        host: "{{ hostvars[groups['k8s_masters'][0]]['ansible_default_ipv4']['address'] }}"
         delay: 30
         timeout: 300
-      when:
-        - inventory_hostname in groups['k8s_masters']
-        - inventory_hostname != "master-1"
-
     - name: Include Master join
       include_tasks: tasks/master-join.yml
-      when:
-        - inventory_hostname in groups['k8s_masters']
-        - inventory_hostname != "master-1"
 
+- name: Configure All Kubernetes Masters
+  hosts: k8s_masters
+  gather_facts: yes
+  become: yes
+  vars_files:
+    - vars.yml
+  tasks:
     - name: Include Kubeconfig setup
       include_tasks: tasks/kubeconfig.yml
-      when: inventory_hostname in groups['k8s_masters']
-
-    - name: Wait for all masters to be ready (API only)
-      ansible.builtin.wait_for:
-        port: 6443
-        host: "{{ ansible_default_ipv4.address | default(ansible_host) }}"
-        delay: 10
-        timeout: 180
-      when: inventory_hostname in groups['k8s_masters']
-
-    # CRITICAL: Install Calico FIRST before any RBAC operations
-    - name: Include Calico setup (MUST be first)
-      include_tasks: tasks/calico.yml
-      when: inventory_hostname == "master-1"
-
-    # Wait for network to be ready before proceeding
-    - name: Wait for CNI network to be ready
-      shell: kubectl get nodes {{ inventory_hostname }} -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}'
-      register: node_ready_status
-      until: node_ready_status.stdout == "True"
-      retries: 30
-      delay: 10
-      environment:
-        KUBECONFIG: /etc/kubernetes/admin.conf
-      when: inventory_hostname in groups['k8s_masters']
-
-    # Now it's safe to do RBAC and other operations
-    - name: Configure Masters RBAC
-      include_tasks: tasks/rbac.yml
-      when: inventory_hostname == "master-1"
-
     - name: Configure Masters Controller Manager
       include_tasks: tasks/kube-controller-manager.yml
-
     - name: Configure Masters Apiserver
       include_tasks: tasks/kube-apiserver.yml
+
+- name: Deploy CNI and RBAC from First Master
+  hosts: "{{ groups['k8s_masters'][0] }}"
+  gather_facts: yes
+  become: yes
+  vars_files:
+    - vars.yml
+  tasks:
+    - name: Include Calico setup
+      include_tasks: tasks/calico.yml
+    - name: Configure Masters RBAC
+      include_tasks: tasks/rbac.yml
 
 - name: Setup Kubernetes Workers
   hosts: k8s_workers
@@ -146,15 +109,14 @@
     - name: Wait for masters to be available
       ansible.builtin.wait_for:
         port: 6443
-        host: "{{ hostvars[groups['k8s_masters'][0]]['ansible_default_ipv4']['address'] | default(hostvars[groups['k8s_masters'][0]]['ansible_host']) }}"
+        host: "{{ hostvars[groups['k8s_masters'][0]]['ansible_default_ipv4']['address'] }}"
         delay: 10
         timeout: 300
-
     - name: Include worker join
       include_tasks: tasks/worker-join.yml
 
 - name: Setup Kubernetes Monitoring
-  hosts: k8s_masters
+  hosts: "{{ groups['k8s_masters'][0] }}"
   gather_facts: yes
   become: yes
   vars_files:
@@ -164,22 +126,5 @@
   tasks:
     - name: Include Helm Installation
       include_tasks: tasks/helm.yml
-      when: inventory_hostname == "master-1"
-
     - name: Include Prometheus Operator configuration
       include_tasks: tasks/monitoring.yml
-      when: inventory_hostname == "master-1"
-
-  handlers:
-    - name: restart kubelet
-      ansible.builtin.systemd:
-        name: kubelet
-        state: restarted
-        daemon_reload: yes
-
-    - name: restart etcd container
-      ansible.builtin.command:
-        cmd: docker compose restart
-        chdir: "{{ ansible_env.HOME }}/k8s-etcd"
-      when: inventory_hostname == 'mac-etcd'
-      become: no

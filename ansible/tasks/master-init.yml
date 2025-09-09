@@ -1,41 +1,33 @@
 ---
-- name: Check if local node is initialized
-  stat:
-    path: /etc/kubernetes/pki/ca.crt
-  register: local_cluster_initialized
+- name: Copy kubeadm config to the first master
+  ansible.builtin.template:
+    src: files/kubernetes/kubeadm-config.yaml.j2
+    dest: /tmp/kubeadm-config.yaml
+    mode: "0644"
 
-- name: Initialize first master
-  block:
-    - name: Initialize Kubernetes cluster
-      command: >
-        kubeadm init
-        --pod-network-cidr={{ pod_network_cidr }}
-        --control-plane-endpoint={{ control_plane_endpoint }}
-        --apiserver-cert-extra-sans={{ vip_address }}
-        --upload-certs
-        --cri-socket unix:///run/containerd/containerd.sock
-      register: kubeadm_init
+- name: Ensure etcd PKI directory exists on the master
+  ansible.builtin.file:
+    path: /etc/kubernetes/pki/etcd
+    state: directory
+    mode: "0755"
 
-    - name: Get certificate key
-      command: kubeadm init phase upload-certs --upload-certs
-      register: cert_key_output
+- name: Copy etcd CA and client certs for API Server
+  ansible.builtin.copy:
+    src: "/tmp/k8s-etcd-certs/{{ item }}"
+    dest: "/etc/kubernetes/pki/etcd/{{ item }}"
+    mode: "0644"
+  loop:
+    - ca.crt
+    - apiserver-etcd-client.crt
+    - apiserver-etcd-client.key
 
-    - name: Extract join command
-      command: kubeadm token create --print-join-command
-      register: join_command_output
+- name: Check if Kubernetes is already initialized
+  ansible.builtin.stat:
+    path: /etc/kubernetes/admin.conf
+  register: k8s_initialized
 
-    - name: Set join command facts
-      set_fact:
-        master_join_command: "{{ join_command_output.stdout }}"
-        cert_key: "{{ cert_key_output.stdout_lines[-1] }}"
-
-    - name: Share credentials with other masters
-      set_fact:
-        master_join_command: "{{ master_join_command }}"
-        cert_key: "{{ cert_key }}"
-      delegate_to: "{{ item }}"
-      delegate_facts: true
-      loop: "{{ groups['k8s_masters'] | difference([inventory_hostname]) }}"
-  when:
-    - inventory_hostname == groups['k8s_masters'][0]
-    - not local_cluster_initialized.stat.exists
+- name: Initialize Kubernetes cluster
+  ansible.builtin.command: kubeadm init --config=/tmp/kubeadm-config.yaml --upload-certs
+  register: kubeadm_init
+  changed_when: true
+  when: not k8s_initialized.stat.exists

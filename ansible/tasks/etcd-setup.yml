@@ -1,32 +1,39 @@
 ---
-- name: Create etcd certificate directory on all etcd nodes
+- name: Create a temporary directory for certificates on the local machine
   ansible.builtin.file:
-    path: "/etc/kubernetes/pki/etcd"
+    path: /tmp/k8s-etcd-certs
     state: directory
     mode: "0755"
-    owner: root
-    group: root
-  when: "'k8s_masters' in group_names"
+  delegate_to: localhost
+  run_once: true
 
-- name: Generate etcd certificates on primary node
+- name: Generate etcd certificates on the primary node
   block:
-    - name: Include etcd certificate tasks
+    - name: Include etcd certificate generation tasks
       include_tasks: etcd-certs.yml
   delegate_to: "{{ etcd_primary_node }}"
   run_once: true
 
-- name: Fetch certificates for external etcd
+- name: Fetch all generated etcd certificates to the local machine
   ansible.builtin.fetch:
     src: "{{ etcd_pki_dir }}/{{ item }}"
     dest: "/tmp/k8s-etcd-certs/"
     flat: yes
   delegate_to: "{{ etcd_primary_node }}"
+  run_once: true
   loop:
     - ca.crt
-    - mac-etcd.crt
-    - mac-etcd.key
-    - mac-etcd-peer.crt
-    - mac-etcd-peer.key
     - apiserver-etcd-client.crt
     - apiserver-etcd-client.key
-  run_once: true
+    - "{{ groups['etcd_nodes'][0] }}.crt"
+    - "{{ groups['etcd_nodes'][0] }}.key"
+    - "{{ groups['etcd_nodes'][0] }}-peer.crt"
+    - "{{ groups['etcd_nodes'][0] }}-peer.key"
+    - "{{ groups['etcd_nodes'][1] }}.crt"
+    - "{{ groups['etcd_nodes'][1] }}.key"
+    - "{{ groups['etcd_nodes'][1] }}-peer.crt"
+    - "{{ groups['etcd_nodes'][1] }}-peer.key"
+    - "{{ groups['etcd_nodes'][2] }}.crt"
+    - "{{ groups['etcd_nodes'][2] }}.key"
+    - "{{ groups['etcd_nodes'][2] }}-peer.crt"
+    - "{{ groups['etcd_nodes'][2] }}-peer.key"

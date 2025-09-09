@@ -1,34 +1,5 @@
 ---
 apiVersion: kubeadm.k8s.io/v1beta4
-kind: ClusterConfiguration
-kubernetesVersion: "{{ kubernetes_version }}"
-controlPlaneEndpoint: "{{ control_plane_endpoint }}"
-apiServer:
-  certSANs:
-    - "{{ control_plane_endpoint.split(':')[0] }}"
-    - "{{ ansible_default_ipv4.address }}"
-    - "127.0.0.1"
-    - "localhost"
-  extraArgs:
-    - name: "authorization-mode"
-      value: "Node,RBAC"
-    - name: "enable-admission-plugins"
-      value: "NodeRestriction"
-    - name: "etcd-servers"
-      value: "{{ etcd_endpoints }}"
-    - name: "etcd-cafile"
-      value: "/etc/kubernetes/pki/etcd/ca.crt"
-    - name: "etcd-certfile"
-      value: "/etc/kubernetes/pki/apiserver-etcd-client.crt"
-    - name: "etcd-keyfile"
-      value: "/etc/kubernetes/pki/apiserver-etcd-client.key"
-
-networking:
-  serviceSubnet: "10.96.0.0/16"
-  podSubnet: "{{ pod_network_cidr }}"
-  dnsDomain: "cluster.local"
----
-apiVersion: kubeadm.k8s.io/v1beta4
 kind: InitConfiguration
 localAPIEndpoint:
   advertiseAddress: "{{ ansible_default_ipv4.address }}"
@@ -36,11 +7,34 @@ localAPIEndpoint:
 nodeRegistration:
   criSocket: "unix:///run/containerd/containerd.sock"
   kubeletExtraArgs:
-    - name: "node-ip"
-      value: "{{ ansible_default_ipv4.address }}"
+    node-ip: "{{ ansible_default_ipv4.address }}"
+---
+apiVersion: kubeadm.k8s.io/v1beta3
+kind: ClusterConfiguration
+kubernetesVersion: "{{ kubernetes_version }}"
+controlPlaneEndpoint: "{{ control_plane_endpoint }}"
+# This is the critical new section
+etcd:
+  external:
+    endpoints:
+    - https://{{ hostvars[groups['etcd_nodes'][0]]['ansible_host'] }}:2379
+    - https://{{ hostvars[groups['etcd_nodes'][1]]['ansible_host'] }}:2379
+    - https://{{ hostvars[groups['etcd_nodes'][2]]['ansible_host'] }}:2379
+    caFile: /etc/kubernetes/pki/etcd/ca.crt
+    certFile: /etc/kubernetes/pki/etcd/apiserver-etcd-client.crt
+    keyFile: /etc/kubernetes/pki/etcd/apiserver-etcd-client.key
+networking:
+  serviceSubnet: "10.96.0.0/16"
+  podSubnet: "{{ pod_network_cidr }}"
+  dnsDomain: "cluster.local"
+apiServer:
+  certSANs:
+  - "{{ control_plane_endpoint.split(':')[0] }}"
+  - "{{ ansible_default_ipv4.address }}"
+  - 127.0.0.1
+  - localhost
 ---
 apiVersion: kubelet.config.k8s.io/v1beta1
 kind: KubeletConfiguration
 cgroupDriver: systemd
 serverTLSBootstrap: true
-rotateCertificates: true

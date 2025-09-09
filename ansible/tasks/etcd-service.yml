@@ -1,46 +1,51 @@
 ---
-- name: Create etcd directories on all nodes
-  ansible.builtin.file:
-    path: /etc/kubernetes/pki/etcd
-    state: directory
-    mode: "0755"
-  when: "'k8s_masters' in group_names"
+- name: Define node-specific variables
+  ansible.builtin.set_fact:
+    etcd_data_dir: "{{ '/root/k8s-etcd' if 'k8s_masters' in group_names else ansible_env.HOME + '/k8s-etcd' }}"
+    become_for_task: "{{ 'yes' if 'k8s_masters' in group_names else 'no' }}"
 
-- name: Create etcd directories on mac-etcd
+- name: Ensure etcd directories exist
   ansible.builtin.file:
-    path: "{{ ansible_env.HOME }}/k8s-etcd/{{ item }}"
+    path: "{{ etcd_data_dir }}/{{ item }}"
     state: directory
     mode: "0755"
+  become: "{{ become_for_task }}"
   loop:
-    - data
     - certs
-    - config
-  when: inventory_hostname == 'mac-etcd'
+    - data
 
-- name: Copy etcd certificates and keys to nodes
+- name: Distribute etcd certificates to each node
   ansible.builtin.copy:
-    src: "{{ playbook_dir }}/temp_pki_etcd/{{ item.file }}"
-    dest: "{{ '/etc/kubernetes/pki/etcd/' if 'k8s_masters' in group_names else ansible_env.HOME + '/k8s-etcd/certs/' }}{{ item.file }}"
-    mode: "{{ item.mode }}"
-  loop:
-    - { file: "ca.crt", mode: "0644" }
-    - { file: "{{ inventory_hostname }}.crt", mode: "0644" }
-    - { file: "{{ inventory_hostname }}.key", mode: "0600" }
-    - { file: "{{ inventory_hostname }}-peer.crt", mode: "0644" } # ADD THIS
-    - { file: "{{ inventory_hostname }}-peer.key", mode: "0600" } # ADD THIS
-    - { file: "apiserver-etcd-client.crt", mode: "0644" }
-    - { file: "apiserver-etcd-client.key", mode: "0600" }
-  when: "'k8s_masters' in group_names or inventory_hostname in groups['etcd_nodes']"
-
-- name: Deploy etcd docker-compose.yml template
-  ansible.builtin.template:
-    src: etcd-docker-compose.yml.j2
-    dest: "{{ ansible_env.HOME }}/k8s-etcd/docker-compose.yml"
+    src: "/tmp/k8s-etcd-certs/{{ item }}"
+    dest: "{{ etcd_data_dir }}/certs/{{ item }}"
     mode: "0644"
-  when: inventory_hostname == 'mac-etcd'
+  become: "{{ become_for_task }}"
+  loop:
+    - ca.crt
+    - "{{ inventory_hostname }}.crt"
+    - "{{ inventory_hostname }}.key"
+    - "{{ inventory_hostname }}-peer.crt"
+    - "{{ inventory_hostname }}-peer.key"
+  notify: restart etcd
 
-- name: Run etcd container
-  ansible.builtin.command: docker-compose up -d
-  args:
-    chdir: "{{ ansible_env.HOME }}/k8s-etcd"
-  when: inventory_hostname == 'mac-etcd'
+- name: Deploy etcd docker-compose template
+  ansible.builtin.template:
+    src: files/kubernetes/etcd-docker-compose.yml.j2
+    dest: "{{ etcd_data_dir }}/docker-compose.yml"
+    mode: "0644"
+  become: "{{ become_for_task }}"
+  notify: restart etcd
+
+- name: Check if Docker Compose is available
+  ansible.builtin.command:
+    cmd: which docker-compose
+  register: docker_compose_check
+  failed_when: false
+  changed_when: false
+
+- name: Start etcd container
+  ansible.builtin.command:
+    cmd: "{{ 'docker-compose' if docker_compose_check.rc == 0 else 'docker compose' }} up -d --remove-orphans"
+    chdir: "{{ etcd_data_dir }}"
+  become: "{{ become_for_task }}"
+  changed_when: false
