@@ -3,8 +3,9 @@
   ansible.builtin.file:
     path: /tmp/k8s-etcd-certs
     state: directory
-    mode: "0755"
+    mode: 0755
   delegate_to: localhost
+  become: false
   run_once: true
 
 - name: Generate etcd certificates on the primary node
@@ -21,6 +22,7 @@
     flat: yes
   delegate_to: "{{ etcd_primary_node }}"
   run_once: true
+  become: true
   loop:
     - ca.crt
     - apiserver-etcd-client.crt

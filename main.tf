@@ -268,7 +268,7 @@ resource "null_resource" "ansible_provisioner" {
       echo "[etcd_nodes]" >> inventory.ini
       echo "master-1 ansible_host=192.168.0.101 ansible_user=ubuntu ansible_ssh_private_key_file=~/Projects/.ssh/id_ed25519" >> inventory.ini
       echo "master-2 ansible_host=192.168.0.102 ansible_user=ubuntu ansible_ssh_private_key_file=~/Projects/.ssh/id_ed25519" >> inventory.ini
-      echo "mac-etcd ansible_host=192.168.0.12 ansible_connection=local" >> inventory.ini
+      echo "mac-etcd ansible_host=192.168.0.41 ansible_connection=local" >> inventory.ini
       echo "" >> inventory.ini
       echo "[k8s_workers]" >> inventory.ini
       echo "worker-pve-1 ansible_host=192.168.0.110 ansible_user=ubuntu ansible_ssh_private_key_file=~/Projects/.ssh/id_ed25519" >> inventory.ini

@@ -1,40 +1,36 @@
 ---
 apiVersion: kubeadm.k8s.io/v1beta4
 kind: InitConfiguration
-localAPIEndpoint:
-  advertiseAddress: "{{ ansible_default_ipv4.address }}"
-  bindPort: 6443
 nodeRegistration:
-  criSocket: "unix:///run/containerd/containerd.sock"
   kubeletExtraArgs:
-    node-ip: "{{ ansible_default_ipv4.address }}"
+    - name: "cgroup-driver"
+      value: "systemd"
 ---
-apiVersion: kubeadm.k8s.io/v1beta3
+apiVersion: kubeadm.k8s.io/v1beta4
 kind: ClusterConfiguration
-kubernetesVersion: "{{ kubernetes_version }}"
+kubernetesVersion: "{{ kube_version }}"
 controlPlaneEndpoint: "{{ control_plane_endpoint }}"
-# This is the critical new section
 etcd:
   external:
     endpoints:
-    - https://{{ hostvars[groups['etcd_nodes'][0]]['ansible_host'] }}:2379
-    - https://{{ hostvars[groups['etcd_nodes'][1]]['ansible_host'] }}:2379
-    - https://{{ hostvars[groups['etcd_nodes'][2]]['ansible_host'] }}:2379
+      - https://{{ hostvars[groups['etcd_nodes'][0]].ansible_host }}:2379
+      - https://{{ hostvars[groups['etcd_nodes'][1]].ansible_host }}:2379
+      - https://{{ hostvars[groups['etcd_nodes'][2]].ansible_host }}:2379
     caFile: /etc/kubernetes/pki/etcd/ca.crt
-    certFile: /etc/kubernetes/pki/etcd/apiserver-etcd-client.crt
-    keyFile: /etc/kubernetes/pki/etcd/apiserver-etcd-client.key
-networking:
-  serviceSubnet: "10.96.0.0/16"
-  podSubnet: "{{ pod_network_cidr }}"
-  dnsDomain: "cluster.local"
+    certFile: /etc/kubernetes/pki/apiserver-etcd-client.crt
+    keyFile: /etc/kubernetes/pki/apiserver-etcd-client.key
 apiServer:
   certSANs:
-  - "{{ control_plane_endpoint.split(':')[0] }}"
-  - "{{ ansible_default_ipv4.address }}"
-  - 127.0.0.1
-  - localhost
+    - "{{ vip_address }}"
+    - "127.0.0.1"
+    - "localhost"
+controllerManager:
+  extraArgs:
+    - name: "node-cidr-mask-size"
+      value: "24"
+networking:
+  podSubnet: "{{ pod_network_cidr }}"
 ---
 apiVersion: kubelet.config.k8s.io/v1beta1
 kind: KubeletConfiguration
 cgroupDriver: systemd
-serverTLSBootstrap: true

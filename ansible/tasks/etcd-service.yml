@@ -1,51 +1,89 @@
 ---
-- name: Define node-specific variables
-  ansible.builtin.set_fact:
-    etcd_data_dir: "{{ '/root/k8s-etcd' if 'k8s_masters' in group_names else ansible_env.HOME + '/k8s-etcd' }}"
-    become_for_task: "{{ 'yes' if 'k8s_masters' in group_names else 'no' }}"
+# ===================================================================
+# Block for Kubernetes Masters (using containerd and static pods)
+# ===================================================================
+- name: Deploy etcd as a static pod on Kubernetes masters
+  block:
+    - name: Ensure etcd data directory exists on masters
+      ansible.builtin.file:
+        path: /var/lib/etcd
+        state: directory
+        mode: "0755"
 
-- name: Ensure etcd directories exist
-  ansible.builtin.file:
-    path: "{{ etcd_data_dir }}/{{ item }}"
-    state: directory
-    mode: "0755"
-  become: "{{ become_for_task }}"
-  loop:
-    - certs
-    - data
+    - name: Ensure etcd PKI directory exists on masters
+      ansible.builtin.file:
+        path: /etc/kubernetes/pki/etcd
+        state: directory
+        mode: "0755"
 
-- name: Distribute etcd certificates to each node
-  ansible.builtin.copy:
-    src: "/tmp/k8s-etcd-certs/{{ item }}"
-    dest: "{{ etcd_data_dir }}/certs/{{ item }}"
-    mode: "0644"
-  become: "{{ become_for_task }}"
-  loop:
-    - ca.crt
-    - "{{ inventory_hostname }}.crt"
-    - "{{ inventory_hostname }}.key"
-    - "{{ inventory_hostname }}-peer.crt"
-    - "{{ inventory_hostname }}-peer.key"
-  notify: restart etcd
+    - name: Distribute etcd certificates to masters
+      ansible.builtin.copy:
+        src: "/tmp/k8s-etcd-certs/{{ item }}"
+        dest: "/etc/kubernetes/pki/etcd/{{ item }}"
+        mode: "0600"
+      loop:
+        - ca.crt
+        - "{{ inventory_hostname }}.crt"
+        - "{{ inventory_hostname }}.key"
+        - "{{ inventory_hostname }}-peer.crt"
+        - "{{ inventory_hostname }}-peer.key"
 
-- name: Deploy etcd docker-compose template
-  ansible.builtin.template:
-    src: files/kubernetes/etcd-docker-compose.yml.j2
-    dest: "{{ etcd_data_dir }}/docker-compose.yml"
-    mode: "0644"
-  become: "{{ become_for_task }}"
-  notify: restart etcd
+    - name: Ensure Kubernetes manifest directory exists on masters
+      ansible.builtin.file:
+        path: /etc/kubernetes/manifests
+        state: directory
+        mode: "0755"
 
-- name: Check if Docker Compose is available
-  ansible.builtin.command:
-    cmd: which docker-compose
-  register: docker_compose_check
-  failed_when: false
-  changed_when: false
+    - name: Deploy etcd static pod manifest to masters
+      ansible.builtin.template:
+        src: files/kubernetes/etcd-static-pod.yaml.j2
+        dest: /etc/kubernetes/manifests/etcd.yaml
+        mode: "0644"
+  when: "'k8s_masters' in group_names"
+  become: true
 
-- name: Start etcd container
-  ansible.builtin.command:
-    cmd: "{{ 'docker-compose' if docker_compose_check.rc == 0 else 'docker compose' }} up -d --remove-orphans"
-    chdir: "{{ etcd_data_dir }}"
-  become: "{{ become_for_task }}"
-  changed_when: false
+# ===================================================================
+# Block for macOS node (using Docker Compose)
+# ===================================================================
+- name: Deploy etcd with Docker Compose on macOS
+  block:
+    - name: Set macOS specific facts
+      ansible.builtin.set_fact:
+        etcd_mac_dir: "{{ ansible_env.HOME }}/k8s-etcd"
+
+    - name: Ensure etcd directories exist on macOS
+      ansible.builtin.file:
+        path: "{{ etcd_mac_dir }}/{{ item }}"
+        state: directory
+        mode: "0755"
+      loop:
+        - certs
+        - data
+
+    - name: Distribute etcd certificates to macOS
+      ansible.builtin.copy:
+        src: "/tmp/k8s-etcd-certs/{{ item }}"
+        dest: "{{ etcd_mac_dir }}/certs/{{ item }}"
+        mode: "0644"
+      loop:
+        - ca.crt
+        - "{{ inventory_hostname }}.crt"
+        - "{{ inventory_hostname }}.key"
+        - "{{ inventory_hostname }}-peer.crt"
+        - "{{ inventory_hostname }}-peer.key"
+      notify: restart etcd on mac
+
+    - name: Deploy etcd docker-compose template to macOS
+      ansible.builtin.template:
+        src: files/kubernetes/etcd-docker-compose.yaml.j2
+        dest: "{{ etcd_mac_dir }}/docker-compose.yml"
+        mode: "0644"
+      notify: restart etcd on mac
+
+    - name: Start etcd container on macOS
+      ansible.builtin.command:
+        cmd: "docker compose up -d --remove-orphans"
+        chdir: "{{ etcd_mac_dir }}"
+      changed_when: false
+  when: "'k8s_masters' not in group_names"
+  become: false

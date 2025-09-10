@@ -1,5 +1,26 @@
 ---
-- name: Prepare Cluster Nodes
+- name: Setup External Etcd Cluster
+  hosts: etcd_nodes
+  gather_facts: yes
+  vars_files:
+    - vars.yml
+  vars:
+    etcd_pki_dir: "/etc/kubernetes/pki"
+    etcd_primary_node: "{{ groups['etcd_nodes'][0] }}"
+  tasks:
+    - name: Include etcd certificate generation and fetching
+      include_tasks: tasks/etcd-setup.yml
+    - name: Include etcd service deployment
+      include_tasks: tasks/etcd-service.yml
+  handlers:
+    - name: restart etcd on mac
+      ansible.builtin.command:
+        cmd: "docker compose restart"
+        chdir: "{{ ansible_env.HOME }}/k8s-etcd"
+      when: "'k8s_masters' not in group_names"
+      become: false
+
+- name: Prepare k8s_cluster
   hosts: k8s_cluster
   gather_facts: yes
   become: yes
@@ -10,27 +31,6 @@
       include_tasks: tasks/cluster-preparation.yml
     - name: Include common Kubernetes setup
       include_tasks: tasks/common.yml
-
-- name: Setup External Etcd Cluster
-  hosts: etcd_nodes
-  gather_facts: yes
-  become: yes
-  vars_files:
-    - vars.yml
-  vars:
-    etcd_pki_dir: "{{ '/root/etcd_pki' if 'k8s_masters' in group_names else ansible_env.HOME + '/etcd_pki' }}"
-    etcd_primary_node: "{{ groups['etcd_nodes'][0] }}"
-  tasks:
-    - name: Include etcd certificate generation and fetching
-      include_tasks: tasks/etcd-setup.yml
-    - name: Include etcd service deployment
-      include_tasks: tasks/etcd-service.yml
-  handlers:
-    - name: restart etcd
-      ansible.builtin.command:
-        cmd: "{{ 'docker-compose' if docker_compose_check.rc == 0 else 'docker compose' }} restart"
-        chdir: "{{ etcd_data_dir }}"
-      become: "{{ become_for_task }}"
 
 - name: Setup Load Balancers
   hosts: load_balancers
