@@ -2,6 +2,7 @@
 - name: Prepare Kubernetes Cluster
   hosts: k8s_cluster
   gather_facts: yes
+  gather_timeout: 60
   become: yes
   pre_tasks:
     - name: Wait for cloud-init to complete
@@ -13,6 +14,7 @@
 - name: Install Common Kubernetes Components
   hosts: k8s_cluster
   gather_facts: yes
+  gather_timeout: 60
   become: yes
   vars_files:
     - vars.yml
@@ -23,6 +25,7 @@
 - name: Setup Load Balancers
   hosts: load_balancers
   gather_facts: yes
+  gather_timeout: 60
   become: yes
   vars_files:
     - vars.yml
@@ -38,6 +41,7 @@
 - name: Setup Kubernetes Masters
   hosts: k8s_masters
   gather_facts: yes
+  gather_timeout: 60
   become: yes
   vars_files:
     - vars.yml
@@ -63,6 +67,7 @@
 - name: Configure Kubernetes Masters
   hosts: k8s_masters
   gather_facts: yes
+  gather_timeout: 60
   become: yes
   vars_files:
     - vars.yml
@@ -75,26 +80,33 @@
     - name: Configure Masters Apiserver
       include_tasks: tasks/kube-apiserver.yml
 
-    - name: Configure Masters RBAC
-      include_tasks: tasks/rbac.yml
-      when: inventory_hostname == "master-1"
-
 - name: Setup Kubernetes Workers
   hosts: k8s_workers
   gather_facts: yes
+  gather_timeout: 60
   become: yes
   vars_files:
     - vars.yml
   tasks:
-    - name: Include common Kubernetes setup
-      include_tasks: tasks/common.yml
-
     - name: Include worker join
       include_tasks: tasks/worker-join.yml
+
+- name: Configure Kubernetes Masters RBAC
+  hosts: k8s_masters
+  gather_facts: yes
+  gather_timeout: 60
+  become: yes
+  vars_files:
+    - vars.yml
+  tasks:
+    - name: Configure Masters RBAC
+      include_tasks: tasks/rbac.yml
+      when: inventory_hostname == "master-1"
 
 - name: Setup Kubernetes Monitoring
   hosts: k8s_masters
   gather_facts: yes
+  gather_timeout: 60
   become: yes
   vars_files:
     - vars.yml

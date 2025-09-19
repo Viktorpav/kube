@@ -19,3 +19,5 @@ __pycache__/
 .terraform/*
 *.tfstate
 *.tfstate.*
+# VM iso and related
+mac-master-vm/ubuntu-22.04.5-live-server-arm64.iso

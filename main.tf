@@ -78,44 +78,10 @@ resource "proxmox_vm_qemu" "k8s-master-pve2" {
   sshkeys   = file(var.ssh_key_path)
 }
 
-resource "proxmox_vm_qemu" "k8s-master-pve3" {
-  name        = "master-3"
-  target_node = "pve"
-  provider    = proxmox
-  onboot      = true
-  clone       = "ubuntu-template"
-  agent       = 1
-  os_type     = "cloud-init"
-  cores       = 2
-  sockets     = 1
-  numa        = true
-  cpu         = "host"
-  memory      = 4096
-  scsihw      = "virtio-scsi-single"
-  bootdisk    = "scsi0"
-
-  serial {
-    id   = 0
-    type = "socket"
+resource "null_resource" "k8s-master-utm3" {
+  triggers = {
+    always_run = "${timestamp()}"
   }
-
-  network {
-    bridge   = "vmbr0"
-    firewall = false
-    model    = "virtio"
-  }
-
-  lifecycle {
-    ignore_changes = [
-      disk,
-      vm_state,
-      sshkeys
-    ]
-  }
-
-  ipconfig0 = "ip=192.168.0.103/24,gw=${var.gateway}"
-  ssh_user  = "ubuntu"
-  sshkeys   = file(var.ssh_key_path)
 }
 
 resource "proxmox_vm_qemu" "k8s-worker-pve" {
@@ -286,7 +252,7 @@ resource "null_resource" "ansible_provisioner" {
   triggers = {
     always_run = "${timestamp()}"
     vm_ids = join(",", concat(
-      [proxmox_vm_qemu.k8s-master-pve.id, proxmox_vm_qemu.k8s-master-pve2.id, proxmox_vm_qemu.k8s-master-pve3.id],
+      [proxmox_vm_qemu.k8s-master-pve.id, proxmox_vm_qemu.k8s-master-pve2.id, null_resource.k8s-master-utm3.id],
       proxmox_vm_qemu.k8s-worker-pve[*].id,
       proxmox_vm_qemu.k8s-worker-pve2[*].id,
       [proxmox_vm_qemu.lb-pve.id, proxmox_vm_qemu.lb-pve2.id]
@@ -323,7 +289,7 @@ resource "null_resource" "ansible_provisioner" {
   depends_on = [
     proxmox_vm_qemu.k8s-master-pve,
     proxmox_vm_qemu.k8s-master-pve2,
-    proxmox_vm_qemu.k8s-master-pve3,
+    null_resource.k8s-master-utm3,
     proxmox_vm_qemu.k8s-worker-pve,
     proxmox_vm_qemu.k8s-worker-pve2,
     proxmox_vm_qemu.lb-pve,

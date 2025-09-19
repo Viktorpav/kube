@@ -11,7 +11,7 @@
         kubeadm init
         --pod-network-cidr={{ pod_network_cidr }}
         --control-plane-endpoint={{ control_plane_endpoint }}
-        --apiserver-cert-extra-sans={{ vip_address }}
+        --apiserver-cert-extra-sans={{ vip_address }},{{ groups['k8s_masters'] | map('extract', hostvars, ['ansible_default_ipv4','address']) | join(',') }}
         --upload-certs
         --cri-socket unix:///run/containerd/containerd.sock
       register: kubeadm_init

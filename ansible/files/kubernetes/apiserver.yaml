@@ -50,7 +50,7 @@ spec:
       livenessProbe:
         failureThreshold: 8
         httpGet:
-          host: "{{ ansible_default_ipv4.address }}"
+          host: "127.0.0.1"
           path: /livez
           port: 6443
           scheme: HTTPS
@@ -60,7 +60,7 @@ spec:
       readinessProbe:
         failureThreshold: 3
         httpGet:
-          host: "{{ ansible_default_ipv4.address }}"
+          host: "127.0.0.1"
           path: /readyz
           port: 6443
           scheme: HTTPS
@@ -72,7 +72,7 @@ spec:
       startupProbe:
         failureThreshold: 24
         httpGet:
-          host: "{{ ansible_default_ipv4.address }}"
+          host: "127.0.0.1"
           path: /livez
           port: 6443
           scheme: HTTPS

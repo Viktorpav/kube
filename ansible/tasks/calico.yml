@@ -1,19 +1,29 @@
 ---
+# Download Calico manifest
 - name: Download Calico manifest
   get_url:
-    url: https://raw.githubusercontent.com/projectcalico/calico/master/manifests/calico.yaml
+    url: https://raw.githubusercontent.com/projectcalico/calico/v3.28.2/manifests/calico.yaml
     dest: "{{ user_home }}/calico.yaml"
     owner: ubuntu
     group: ubuntu
     mode: "0644"
 
-- name: Update pod CIDR in Calico manifest
+# Replace docker.io registry with quay.io
+- name: Replace Calico image registry from docker.io to quay.io
   replace:
     path: "{{ user_home }}/calico.yaml"
-    regexp: '# - name: CALICO_IPV4POOL_CIDR\n#   value: "192.168.0.0/16"'
-    replace: '- name: CALICO_IPV4POOL_CIDR\n  value: "{{ pod_network_cidr }}"'
+    regexp: "docker.io/calico"
+    replace: "quay.io/calico"
 
-- name: Apply Calico manifest
+# Verify replacement happened everywhere
+- name: Verify that all Calico images use quay.io
+  command: grep -q 'quay.io/calico' {{ user_home }}/calico.yaml
+  register: verify_quay
+  failed_when: verify_quay.rc != 0
+  changed_when: false
+
+# Apply patched Calico manifest
+- name: Apply Calico manifest (patched to use quay.io)
   become: true
   environment:
     KUBECONFIG: "{{ user_home }}/.kube/config"
@@ -23,6 +33,43 @@
   delay: 10
   until: calico_apply.rc == 0
 
+# Wait for Calico CRDs to be established
+- name: Wait for Calico CRDs to be established
+  become: true
+  environment:
+    KUBECONFIG: "{{ user_home }}/.kube/config"
+  command: kubectl wait --for=condition=Established crd/ippools.crd.projectcalico.org --timeout=60s
+  register: wait_crd
+  retries: 10
+  delay: 10
+  until: wait_crd.rc == 0
+
+# Create a custom IPPool with your settings after Calico is running
+- name: Create custom IPPool configuration
+  become: true
+  environment:
+    KUBECONFIG: "{{ user_home }}/.kube/config"
+  shell: |
+    kubectl delete ippool default-ipv4-ippool --ignore-not-found=true
+    kubectl apply -f - <<EOF
+    apiVersion: crd.projectcalico.org/v1
+    kind: IPPool
+    metadata:
+      name: default-ipv4-ippool
+    spec:
+      cidr: {{ pod_network_cidr }}
+      ipipMode: Never
+      vxlanMode: CrossSubnet
+      natOutgoing: true
+      disabled: false
+      nodeSelector: all()
+    EOF
+  register: ippool_apply
+  retries: 6
+  delay: 10
+  until: ippool_apply.rc == 0
+
+# Wait for Calico pods to be ready
 - name: Wait for Calico pods to be ready
   become: true
   environment:
@@ -33,39 +80,7 @@
   delay: 30
   until: wait_calico.rc == 0
 
-- name: Wait for Calico API resources to be ready
-  become: true
-  environment:
-    KUBECONFIG: "{{ user_home }}/.kube/config"
-  command: kubectl wait --for=condition=Established crd/ippools.crd.projectcalico.org --timeout=60s
-  register: wait_crd
-  retries: 10
-  delay: 10
-  until: wait_crd.rc == 0
-
-- name: Wait for IPPool to be created
-  become: true
-  environment:
-    KUBECONFIG: "{{ user_home }}/.kube/config"
-  command: kubectl get ippool default-ipv4-ippool
-  register: ippool_check
-  retries: 12
-  delay: 10
-  until: ippool_check.rc == 0
-
-- name: Configure Calico IPPool CIDR
-  become: true
-  environment:
-    KUBECONFIG: "{{ user_home }}/.kube/config"
-  command: >
-    kubectl patch ippool default-ipv4-ippool 
-    --patch '{"spec":{"cidr":"{{ pod_network_cidr }}"}}' 
-    --type=merge
-  register: ippool_patch
-  retries: 6
-  delay: 10
-  until: ippool_patch.rc == 0
-
+# Wait for cluster network functionality
 - name: Wait for cluster network functionality
   become: true
   environment:
