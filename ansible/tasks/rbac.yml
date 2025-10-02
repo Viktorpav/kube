@@ -95,8 +95,7 @@
 # =============================================================================
 # CUSTOM ADMIN USER - Optional, only if you need a custom admin ServiceAccount
 # =============================================================================
-
-- name: Create admin-user ServiceAccount
+- name: Ensure admin-user ServiceAccount exists
   shell: |
     kubectl apply -f - <<EOF
     apiVersion: v1
@@ -107,8 +106,9 @@
     EOF
   environment:
     KUBECONFIG: "{{ user_home }}/.kube/config"
+  run_once: true
 
-- name: Create ClusterRoleBinding for admin-user
+- name: Ensure ClusterRoleBinding for admin-user exists
   shell: |
     kubectl apply -f - <<EOF
     apiVersion: rbac.authorization.k8s.io/v1
@@ -120,9 +120,10 @@
       kind: ClusterRole
       name: cluster-admin
     subjects:
-      - kind: ServiceAccount
-        name: admin-user
-        namespace: kube-system
+    - kind: ServiceAccount
+      name: admin-user
+      namespace: kube-system
     EOF
   environment:
     KUBECONFIG: "{{ user_home }}/.kube/config"
+  run_once: true

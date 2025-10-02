@@ -5,11 +5,13 @@
   gather_timeout: 60
   become: yes
   pre_tasks:
-    - name: Wait for cloud-init to complete
+    - name: Wait for cloud-init to complete properly
       command: cloud-init status --wait
+      register: cloudinit_status
+      retries: 10
+      delay: 60
+      until: cloudinit_status.rc == 0
       changed_when: false
-      failed_when: false
-      timeout: 300
 
 - name: Install Common Kubernetes Components
   hosts: k8s_cluster
@@ -29,8 +31,6 @@
   become: yes
   vars_files:
     - vars.yml
-  tags:
-    - configure_masters
   tasks:
     - name: Include Keepalived setup
       include_tasks: tasks/keepalived.yml
@@ -62,7 +62,7 @@
 
     - name: Include Calico setup
       include_tasks: tasks/calico.yml
-      when: inventory_hostname == "master-1"
+      when: inventory_hostname in groups['k8s_masters']
 
 - name: Configure Kubernetes Masters
   hosts: k8s_masters
@@ -71,8 +71,6 @@
   become: yes
   vars_files:
     - vars.yml
-  tags:
-    - configure_masters
   tasks:
     - name: Configure Masters Controller Manager
       include_tasks: tasks/kube-controller-manager.yml
@@ -101,7 +99,6 @@
   tasks:
     - name: Configure Masters RBAC
       include_tasks: tasks/rbac.yml
-      when: inventory_hostname == "master-1"
 
 - name: Setup Kubernetes Monitoring
   hosts: k8s_masters
@@ -114,9 +111,7 @@
     - configure_masters
   tasks:
     - name: Include Helm Installation
-      include_tasks: tasks/helm.yml
-      when: inventory_hostname == "master-1"
+      include_tasks: tasks/helm2.yml
 
     - name: Include Prometheus Operator configuration
-      include_tasks: tasks/monitoring.yml
-      when: inventory_hostname == "master-1"
+      include_tasks: tasks/monitoring2.yml

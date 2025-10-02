@@ -20,4 +20,6 @@ provider "proxmox" {
   pm_api_url          = "https://192.168.0.31:8006/api2/json"
   pm_api_token_id     = "root@pam!terraform"
   pm_api_token_secret = "040b5f4e-d2cf-415c-8508-5bdc2fe082c5"
+  pm_timeout          = 600
+  pm_parallel         = 2
 }

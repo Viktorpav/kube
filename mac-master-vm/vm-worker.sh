@@ -1,8 +1,7 @@
-######## This is for script manual run###### works!
 #!/bin/bash
 set -e
 
-sudo hostnamectl set-hostname master-3
+sudo hostnamectl set-hostname worker-utm-3
 
 # Set up SSH key
 sudo mkdir -p /home/ubuntu/.ssh
@@ -24,7 +23,7 @@ echo "ubuntu ALL=(ALL) NOPASSWD:ALL" | sudo tee /etc/sudoers.d/ubuntu > /dev/nul
 # Update hosts file
 sudo tee /etc/hosts > /dev/null << 'EOF'
 127.0.0.1 localhost
-192.168.0.103 master-3 master-3
+192.168.0.120 worker-utm-3 worker-utm-3
 
 # IPv6
 ::1 localhost ip6-localhost ip6-loopback
@@ -45,11 +44,11 @@ network:
   ethernets:
     eth0:
       match:
-        macaddress: 8e:f7:43:ca:34:d5
+        macaddress: 8e:f7:43:ca:34:d6
       set-name: eth0
       dhcp4: false
       addresses:
-        - 192.168.0.103/24
+        - 192.168.0.120/24
       nameservers:
         addresses: [8.8.8.8, 8.8.4.4]
       routes:
@@ -61,5 +60,3 @@ sudo netplan generate
 sudo netplan apply
 
 sudo reboot
-
-

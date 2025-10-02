@@ -19,18 +19,6 @@ frontend kubernetes-api
     mode tcp
     default_backend kubernetes-backend
 
-# Grafana Frontend
-frontend monitoring_grafana
-    bind *:30000
-    mode http
-    default_backend grafana_backend
-
-# Prometheus Frontend
-frontend monitoring_prometheus
-    bind *:30001
-    mode http
-    default_backend prometheus_backend
-
 # Statistics Frontend
 frontend stats
     bind *:9000
@@ -53,20 +41,32 @@ backend kubernetes-backend
 server {{ host }} {{ hostvars[host].ansible_default_ipv4.address }}:6443 check inter 2000 rise 2 fall 3
 {% endfor %}
 
-# Grafana Backend
-backend grafana_backend
+# HTTP Ingress Frontend
+frontend http_ingress
+    bind *:80
+    mode http
+    default_backend ingress_http_backend
+
+# HTTPS Ingress Frontend  
+frontend https_ingress
+    bind *:443
+    mode tcp
+    default_backend ingress_https_backend
+
+# HTTP Ingress Backend
+backend ingress_http_backend
     mode http
     balance roundrobin
-    option httpchk GET /
-{% for host in groups['k8s_masters'] %}
-server {{ host }} {{ hostvars[host].ansible_default_ipv4.address }}:30000 check
+    option httpchk GET /healthz
+{% for host in groups['k8s_workers'] %}
+    server {{ host }} {{ hostvars[host].ansible_default_ipv4.address }}:30080 check
 {% endfor %}
 
-# Prometheus Backend
-backend prometheus_backend
-    mode http
+# HTTPS Ingress Backend
+backend ingress_https_backend
+    mode tcp
     balance roundrobin
-    option httpchk GET /-/healthy
-{% for host in groups['k8s_masters'] %}
-server {{ host }} {{ hostvars[host].ansible_default_ipv4.address }}:30001 check
+    option tcp-check
+{% for host in groups['k8s_workers'] %}
+    server {{ host }} {{ hostvars[host].ansible_default_ipv4.address }}:30443 check
 {% endfor %}

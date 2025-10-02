@@ -2,9 +2,79 @@
 - name: Install Helm
   ansible.builtin.shell:
     cmd: "curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash"
+  args:
     creates: /usr/local/bin/helm
 
-- name: Add Prometheus Helm repository
+- name: Add Helm repos
   kubernetes.core.helm_repository:
-    name: prometheus-community
-    repo_url: https://prometheus-community.github.io/helm-charts
+    name: "{{ item.name }}"
+    repo_url: "{{ item.url }}"
+  loop:
+    - { name: rook-release, url: "https://charts.rook.io/release" }
+    - {
+        name: prometheus-community,
+        url: "https://prometheus-community.github.io/helm-charts",
+      }
+    - { name: ingress-nginx, url: "https://kubernetes.github.io/ingress-nginx" }
+  run_once: true
+
+- name: Install Rook operator
+  kubernetes.core.helm:
+    name: rook-ceph
+    chart_ref: rook-release/rook-ceph
+    release_namespace: rook-ceph
+    create_namespace: true
+    wait: true
+    wait_timeout: 10m
+  run_once: true
+
+- name: Wait for Rook operator
+  kubernetes.core.k8s_info:
+    kind: Pod
+    namespace: rook-ceph
+    label_selectors:
+      - app=rook-ceph-operator
+    wait: true
+    wait_condition:
+      type: Ready
+      status: "True"
+    wait_timeout: 300
+  run_once: true
+
+- name: Deploy Ceph cluster
+  kubernetes.core.k8s:
+    state: present
+    src: https://raw.githubusercontent.com/rook/rook/release-1.18/deploy/examples/cluster.yaml
+  run_once: true
+
+- name: Deploy StorageClass
+  kubernetes.core.k8s:
+    state: present
+    src: https://raw.githubusercontent.com/rook/rook/release-1.18/deploy/examples/csi/rbd/storageclass.yaml
+  run_once: true
+
+- name: Wait for Ceph cluster ready
+  kubernetes.core.k8s_info:
+    api_version: ceph.rook.io/v1
+    kind: CephCluster
+    name: rook-ceph
+    namespace: rook-ceph
+    wait: true
+    wait_condition:
+      type: Ready
+      status: "True"
+    wait_timeout: 900
+  run_once: true
+
+- name: Wait for OSDs
+  kubernetes.core.k8s_info:
+    kind: Pod
+    namespace: rook-ceph
+    label_selectors:
+      - app=rook-ceph-osd
+    wait: true
+    wait_condition:
+      type: Ready
+      status: "True"
+    wait_timeout: 900
+  run_once: true

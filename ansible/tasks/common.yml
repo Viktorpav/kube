@@ -26,6 +26,8 @@
   loop:
     - overlay
     - br_netfilter
+    - rbd
+    - libceph
 
 - name: Configure sysctl parameters
   copy:
@@ -47,8 +49,26 @@
       - apt-transport-https
       - ca-certificates
       - rsync
+      - git
+      - vim
+      - jq
+      - lvm2
+      - xfsprogs
     update_cache: yes
     state: present
+
+- name: Ensure pip is installed
+  ansible.builtin.package:
+    name: python3-pip
+    state: present
+
+- name: Install required Python libraries for Kubernetes modules
+  ansible.builtin.pip:
+    name:
+      - kubernetes
+      - openshift
+    state: present
+    executable: pip3
 
 - name: Configure containerd
   shell: |
