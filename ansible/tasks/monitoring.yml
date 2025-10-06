@@ -1,4 +1,4 @@
-- name: Install Prometheus stack
+- name: Install Prometheus stack without persistence
   kubernetes.core.helm:
     name: monitoring
     chart_ref: prometheus-community/kube-prometheus-stack
@@ -10,28 +10,16 @@
       grafana:
         adminPassword: "{{ grafana_admin_password }}"
         persistence:
-          enabled: true
-          storageClassName: rook-ceph-block
-          size: 2Gi
+          enabled: false # disable PVC
       prometheus:
         prometheusSpec:
           storageSpec:
-            volumeClaimTemplate:
-              spec:
-                storageClassName: rook-ceph-block
-                resources:
-                  requests:
-                    storage: 5Gi
+            volumeClaimTemplate: null # disable PVC
           retention: 7d
       alertmanager:
         alertmanagerSpec:
           storage:
-            volumeClaimTemplate:
-              spec:
-                storageClassName: rook-ceph-block
-                resources:
-                  requests:
-                    storage: 1Gi
+            volumeClaimTemplate: null # disable PVC
   run_once: true
 
 - name: Wait for all monitoring pods to be ready
@@ -44,88 +32,38 @@
       status: "True"
     wait_timeout: 600
   run_once: true
-
-- name: Install Ingress NGINX
-  kubernetes.core.helm:
-    name: ingress-nginx
-    chart_ref: ingress-nginx/ingress-nginx
-    release_namespace: ingress-nginx
-    create_namespace: true
-    wait: true
-    wait_timeout: 10m
-    values:
-      controller:
-        service:
-          type: NodePort
-          nodePorts:
-            http: 30080
-            https: 30443
-  run_once: true
-
-- name: Wait for Ingress controller
-  kubernetes.core.k8s_info:
-    kind: Deployment
-    name: ingress-nginx-controller
-    namespace: ingress-nginx
-    wait: true
-    wait_condition:
-      type: Available
-      status: "True"
-    wait_timeout: 300
-  run_once: true
-
-- name: Create Grafana Ingress
-  kubernetes.core.k8s:
-    state: present
-    definition:
-      apiVersion: networking.k8s.io/v1
-      kind: Ingress
-      metadata:
-        name: grafana
-        namespace: monitoring
-      spec:
-        ingressClassName: nginx
-        rules:
-          - host: grafana.local
-            http:
-              paths:
-                - path: /
-                  pathType: Prefix
-                  backend:
-                    service:
-                      name: monitoring-grafana
-                      port:
-                        number: 80
-  run_once: true
-  retries: 10
-  delay: 10
-  register: result
-  until: result is succeeded
-
-- name: Create Prometheus Ingress
-  kubernetes.core.k8s:
-    state: present
-    definition:
-      apiVersion: networking.k8s.io/v1
-      kind: Ingress
-      metadata:
-        name: prometheus
-        namespace: monitoring
-      spec:
-        ingressClassName: nginx
-        rules:
-          - host: prometheus.local
-            http:
-              paths:
-                - path: /
-                  pathType: Prefix
-                  backend:
-                    service:
-                      name: monitoring-kube-prometheus-prometheus
-                      port:
-                        number: 9090
-  run_once: true
-  retries: 10
-  delay: 10
-  register: result
-  until: result is succeeded
+# - name: Install Prometheus stack
+#   kubernetes.core.helm:
+#     name: monitoring
+#     chart_ref: prometheus-community/kube-prometheus-stack
+#     release_namespace: monitoring
+#     create_namespace: true
+#     wait: true
+#     wait_timeout: 45m
+#     values:
+#       grafana:
+#         adminPassword: "{{ grafana_admin_password }}"
+#         persistence:
+#           enabled: true
+#           storageClassName: rook-ceph-block
+#           size: 2Gi
+#       prometheus:
+#         prometheusSpec:
+#           storageSpec:
+#             volumeClaimTemplate:
+#               spec:
+#                 storageClassName: rook-ceph-block
+#                 resources:
+#                   requests:
+#                     storage: 5Gi
+#           retention: 7d
+#       alertmanager:
+#         alertmanagerSpec:
+#           storage:
+#             volumeClaimTemplate:
+#               spec:
+#                 storageClassName: rook-ceph-block
+#                 resources:
+#                   requests:
+#                     storage: 1Gi
+#   run_once: true

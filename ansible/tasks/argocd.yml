@@ -1,0 +1,46 @@
+---
+- name: Install ArgoCD
+  kubernetes.core.k8s:
+    state: present
+    src: https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+    namespace: argocd
+  run_once: true
+
+- name: Wait for ArgoCD server
+  kubernetes.core.k8s_info:
+    kind: Pod
+    namespace: argocd
+    label_selectors:
+      - app.kubernetes.io/name=argocd-server
+    wait: true
+    wait_condition:
+      type: Ready
+      status: "True"
+    wait_timeout: 300
+  run_once: true
+
+- name: Deploy ArgoCD Application (iooding-blog)
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: argoproj.io/v1alpha1
+      kind: Application
+      metadata:
+        name: iooding-blog
+        namespace: argocd
+      spec:
+        project: default
+        source:
+          repoURL: https://github.com/Viktorpav/iooding.git
+          targetRevision: master
+          path: k8s/manifests # Must exist in your repo!
+        destination:
+          server: https://kubernetes.default.svc
+          namespace: iooding
+        syncPolicy:
+          automated:
+            prune: true
+            selfHeal: true
+          syncOptions:
+            - CreateNamespace=true
+  run_once: true

@@ -1,0 +1,50 @@
+- name: Read AWS credentials from iooding profile
+  set_fact:
+    aws_creds: "{{ lookup('ini', 'aws_access_key_id section=iooding file=' + lookup('env', 'HOME') + '/.aws/credentials') }}"
+    aws_secret: "{{ lookup('ini', 'aws_secret_access_key section=iooding file=' + lookup('env', 'HOME') + '/.aws/credentials') }}"
+
+- name: Create AWS credentials secret
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: aws-credentials
+        namespace: iooding
+      type: Opaque
+      stringData:
+        access_key_id: "{{ aws_creds }}"
+        secret_access_key: "{{ aws_secret }}"
+
+- name: Install External Secrets Operator
+  kubernetes.core.helm:
+    name: external-secrets
+    chart_ref: external-secrets/external-secrets
+    release_namespace: external-secrets
+    create_namespace: true
+    binary_path: /usr/local/bin/helm
+  run_once: true
+
+- name: Create SecretStore for AWS SSM
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: external-secrets.io/v1
+      kind: SecretStore
+      metadata:
+        name: aws-ssm
+        namespace: iooding
+      spec:
+        provider:
+          aws:
+            service: ParameterStore
+            region: eu-central-1
+            auth:
+              secretRef:
+                accessKeyIDSecretRef:
+                  name: aws-credentials
+                  key: access_key_id
+                secretAccessKeySecretRef:
+                  name: aws-credentials
+                  key: secret_access_key

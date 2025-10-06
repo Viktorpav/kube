@@ -58,8 +58,8 @@
       name: default-ipv4-ippool
     spec:
       cidr: {{ pod_network_cidr }}
-      ipipMode: Never
-      vxlanMode: CrossSubnet
+      ipipMode: Always
+      vxlanMode: Never
       natOutgoing: true
       disabled: false
       nodeSelector: all()
