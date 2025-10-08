@@ -26,6 +26,14 @@
     binary_path: /usr/local/bin/helm
   run_once: true
 
+- name: Wait for webhook
+  command: kubectl get deployment external-secrets-webhook -n external-secrets
+  register: result
+  until: result.rc == 0
+  retries: 10
+  delay: 3
+  changed_when: false
+
 - name: Create SecretStore for AWS SSM
   kubernetes.core.k8s:
     state: present

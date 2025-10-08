@@ -58,6 +58,7 @@ backend ingress_http_backend
     mode http
     balance roundrobin
     option httpchk GET /healthz
+    default-server inter 5000 rise 2 fall 3 check
 {% for host in groups['k8s_workers'] %}
     server {{ host }} {{ hostvars[host].ansible_default_ipv4.address }}:30080 check
 {% endfor %}
@@ -67,6 +68,7 @@ backend ingress_https_backend
     mode tcp
     balance roundrobin
     option tcp-check
+    default-server inter 5000 rise 2 fall 3 check
 {% for host in groups['k8s_workers'] %}
     server {{ host }} {{ hostvars[host].ansible_default_ipv4.address }}:30443 check
 {% endfor %}

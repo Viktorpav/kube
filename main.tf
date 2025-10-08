@@ -90,6 +90,18 @@ resource "null_resource" "k8s-worker-utm3" {
   }
 }
 
+resource "null_resource" "k8s-worker-utm4" {
+  triggers = {
+    always_run = "${timestamp()}"
+  }
+}
+
+resource "null_resource" "k8s-lb-utm3" {
+  triggers = {
+    always_run = "${timestamp()}"
+  }
+}
+
 resource "proxmox_vm_qemu" "k8s-worker-pve" {
   count       = 3
   name        = "worker-pve-${count.index + 1}"
@@ -259,10 +271,10 @@ resource "null_resource" "ansible_provisioner" {
     always_run = "${timestamp()}"
     vm_ids = join(",", flatten([
       [proxmox_vm_qemu.k8s-master-pve.id, proxmox_vm_qemu.k8s-master-pve2.id, null_resource.k8s-master-utm3.id],
-      [null_resource.k8s-worker-utm3.id],
+      [null_resource.k8s-worker-utm3.id, null_resource.k8s-worker-utm4.id],
       proxmox_vm_qemu.k8s-worker-pve[*].id,
       proxmox_vm_qemu.k8s-worker-pve2[*].id,
-      [proxmox_vm_qemu.lb-pve.id, proxmox_vm_qemu.lb-pve2.id]
+      [proxmox_vm_qemu.lb-pve.id, proxmox_vm_qemu.lb-pve2.id, null_resource.k8s-lb-utm3.id]
     ]))
   }
 
@@ -280,10 +292,12 @@ resource "null_resource" "ansible_provisioner" {
       echo "worker-pve2-1 ansible_host=192.168.0.115 ansible_user=ubuntu ansible_ssh_private_key_file=~/Projects/.ssh/id_ed25519" >> inventory.ini
       echo "worker-pve2-2 ansible_host=192.168.0.116 ansible_user=ubuntu ansible_ssh_private_key_file=~/Projects/.ssh/id_ed25519" >> inventory.ini
       echo "worker-utm-3 ansible_host=192.168.0.120 ansible_user=ubuntu ansible_ssh_private_key_file=~/Projects/.ssh/id_ed25519" >> inventory.ini
+      echo "worker-utm-4 ansible_host=192.168.0.121 ansible_user=ubuntu ansible_ssh_private_key_file=~/Projects/.ssh/id_ed25519" >> inventory.ini
       echo "" >> inventory.ini
       echo "[load_balancers]" >> inventory.ini
       echo "lb-1 ansible_host=192.168.0.150 ansible_user=ubuntu ansible_ssh_private_key_file=~/Projects/.ssh/id_ed25519" >> inventory.ini
       echo "lb-2 ansible_host=192.168.0.151 ansible_user=ubuntu ansible_ssh_private_key_file=~/Projects/.ssh/id_ed25519" >> inventory.ini
+      echo "lb-utm-3 ansible_host=192.168.0.155 ansible_user=ubuntu ansible_ssh_private_key_file=~/Projects/.ssh/id_ed25519" >> inventory.ini
       echo "" >> inventory.ini
       echo "[k8s_cluster:children]" >> inventory.ini
       echo "k8s_masters" >> inventory.ini
@@ -300,6 +314,8 @@ resource "null_resource" "ansible_provisioner" {
     proxmox_vm_qemu.k8s-master-pve2,
     null_resource.k8s-master-utm3,
     null_resource.k8s-worker-utm3,
+    null_resource.k8s-worker-utm4,
+    null_resource.k8s-lb-utm3,
     proxmox_vm_qemu.k8s-worker-pve,
     proxmox_vm_qemu.k8s-worker-pve2,
     proxmox_vm_qemu.lb-pve,
