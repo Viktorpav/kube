@@ -44,7 +44,7 @@ network:
   ethernets:
     eth0:
       match:
-        macaddress: 8e:f7:43:ca:34:d6
+        macaddress: 66:98:ac:cd:ad:91
       set-name: eth0
       dhcp4: false
       addresses:

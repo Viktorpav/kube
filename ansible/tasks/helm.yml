@@ -9,6 +9,7 @@
   kubernetes.core.helm_repository:
     name: "{{ item.name }}"
     repo_url: "{{ item.url }}"
+    binary_path: /usr/local/bin/helm
   loop:
     - { name: rook-release, url: "https://charts.rook.io/release" }
     - {
@@ -16,10 +17,41 @@
         url: "https://prometheus-community.github.io/helm-charts",
       }
     - { name: ingress-nginx, url: "https://kubernetes.github.io/ingress-nginx" }
+    - { name: jetstack, url: "https://charts.jetstack.io" }
     - { name: external-secrets, url: "https://charts.external-secrets.io" }
   run_once: true
 
 - name: Update Helm repos
   ansible.builtin.shell:
     cmd: /usr/local/bin/helm repo update
+  run_once: true
+
+- name: Install cert-manager
+  kubernetes.core.helm:
+    name: cert-manager
+    chart_ref: jetstack/cert-manager
+    release_namespace: cert-manager
+    create_namespace: true
+    binary_path: /usr/local/bin/helm
+    values:
+      installCRDs: true
+  run_once: true
+
+- name: Wait for all cert-manager pods ready
+  kubernetes.core.k8s_info:
+    kind: Pod
+    namespace: cert-manager
+  register: cert_manager_pods
+  until: cert_manager_pods.resources | selectattr('status.phase', 'equalto', 'Running') | list | length >= 3
+  retries: 30
+  delay: 10
+  changed_when: false
+
+- name: Install External Secrets Operator
+  kubernetes.core.helm:
+    name: external-secrets
+    chart_ref: external-secrets/external-secrets
+    release_namespace: external-secrets
+    create_namespace: true
+    binary_path: /usr/local/bin/helm
   run_once: true

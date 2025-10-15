@@ -3,6 +3,16 @@
     aws_creds: "{{ lookup('ini', 'aws_access_key_id section=iooding file=' + lookup('env', 'HOME') + '/.aws/credentials') }}"
     aws_secret: "{{ lookup('ini', 'aws_secret_access_key section=iooding file=' + lookup('env', 'HOME') + '/.aws/credentials') }}"
 
+- name: Create AWS iooding namespace
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: iooding
+  run_once: true
+
 - name: Create AWS credentials secret
   kubernetes.core.k8s:
     state: present
@@ -17,21 +27,16 @@
         access_key_id: "{{ aws_creds }}"
         secret_access_key: "{{ aws_secret }}"
 
-- name: Install External Secrets Operator
-  kubernetes.core.helm:
-    name: external-secrets
-    chart_ref: external-secrets/external-secrets
-    release_namespace: external-secrets
-    create_namespace: true
-    binary_path: /usr/local/bin/helm
-  run_once: true
-
-- name: Wait for webhook
-  command: kubectl get deployment external-secrets-webhook -n external-secrets
-  register: result
-  until: result.rc == 0
-  retries: 10
-  delay: 3
+- name: Wait for webhook pods ready
+  kubernetes.core.k8s_info:
+    kind: Pod
+    namespace: external-secrets
+    label_selectors:
+      - app.kubernetes.io/name=external-secrets-webhook
+  register: webhook_pods
+  until: webhook_pods.resources | selectattr('status.phase', 'equalto', 'Running') | list | length > 0
+  retries: 30
+  delay: 10
   changed_when: false
 
 - name: Create SecretStore for AWS SSM
